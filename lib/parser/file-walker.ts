@@ -77,7 +77,10 @@ export function walkDirectory(options: WalkOptions): WalkResult {
           const lines = content.split('\n').length;
           const hash = crypto.createHash('sha256').update(content).digest('hex').slice(0, 8);
           const folder = path.dirname(fullPath);
-          const modulePath = fullPath.replace(rootDir, '').replace(/^\//, '');
+          // path.relative handles relative rootDir, trailing separators, and
+          // produces the correct relative path regardless of rootDir form.
+          // Backslashes are normalised to forward slashes for Windows compat.
+          const modulePath = path.relative(rootDir, fullPath).replace(/\\/g, '/');
 
           files.push({
             path: fullPath,
