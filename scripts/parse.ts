@@ -11,7 +11,7 @@ import type { ParseResult } from '../lib/parser';
 
 async function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0) {
     console.error('Usage: tsx scripts/parse.ts <directory> [--output <file>]');
     console.error('');
@@ -25,6 +25,12 @@ async function main() {
   const targetDir = path.resolve(args[0]);
   const outputIndex = args.indexOf('--output');
   const outputFile = outputIndex !== -1 ? args[outputIndex + 1] : null;
+
+  if (outputIndex !== -1 && (!outputFile || outputFile.startsWith('--'))) {
+    console.error('Error: --output requires a file path argument');
+    console.error('Usage: tsx scripts/parse.ts <directory> [--output <file>]');
+    process.exit(1);
+  }
 
   if (!fs.existsSync(targetDir)) {
     console.error(`Directory not found: ${targetDir}`);
@@ -52,7 +58,7 @@ function printSummary(result: ParseResult, elapsed: number): void {
 
   console.log('=== SUMMARY ===');
   console.log('');
-  
+
   console.log('Files:');
   console.log(`  Found:   ${files.length}`);
   console.log(`  Skipped: ${skipped.length}`);
@@ -81,7 +87,7 @@ function printSummary(result: ParseResult, elapsed: number): void {
   if (skipped.length > 0) {
     console.log('=== SKIPPED FILES ===');
     console.log('');
-    
+
     // Group by reason
     const byReason = new Map<string, string[]>();
     for (const skip of skipped) {
