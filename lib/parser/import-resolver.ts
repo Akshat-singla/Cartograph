@@ -169,12 +169,34 @@ function resolveSpecifier(
   for (const ext of extensions) {
     if (filePathSet.has(resolvedPath + ext)) return { resolved: resolvedPath + ext };
   }
+
+  // ESM extension substitution: TypeScript sources are often imported with
+  // their emitted JS extension (.js / .mjs / .cjs). Try the TS equivalent.
+  const esmMap: Record<string, string[]> = {
+    '.js': ['.ts', '.tsx'],
+    '.mjs': ['.mts'],
+    '.cjs': ['.cts'],
+  };
+  const specifierExt = path.extname(specifier);
+  const tsAlts = esmMap[specifierExt];
+  if (tsAlts) {
+    const base = resolvedPath.slice(0, -specifierExt.length);
+    for (const alt of tsAlts) {
+      if (filePathSet.has(base + alt)) return { resolved: base + alt };
+    }
+  }
+
   for (const ext of indexExts) {
     const idx = path.join(resolvedPath, `index${ext}`);
     if (filePathSet.has(idx)) return { resolved: idx };
   }
 
-  if (fs.existsSync(resolvedPath)) return { excluded: true };
+  // Only classify as excluded when the path is a regular file outside the
+  // tracked set — not when it is a directory (which means the index lookup
+  // above already exhausted all candidates).
+  if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+    return { excluded: true };
+  }
 
   return { reason: `File not found: ${resolvedPath}` };
 }
