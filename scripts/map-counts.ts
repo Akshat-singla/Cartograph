@@ -71,9 +71,9 @@ console.log('');
 
 // Acceptance check #3: every edge terminates on a known node
 const nodeDirs = new Set(nodes.flatMap(n => n.files.map(f => f.path)));
-const badEdges = edges.filter(e => !nodeDirs.has(e.from) && !nodeDirs.has(e.to));
+const badEdges = edges.filter(e => !nodeDirs.has(e.from) || !nodeDirs.has(e.to));
 if (badEdges.length > 0) {
-  console.log(`⚠  Edges with both endpoints outside the graph: ${badEdges.length}`);
+  console.log(`⚠  Edges with at least one endpoint outside the graph: ${badEdges.length}`);
 } else {
   console.log(`✓  All edge endpoints exist in the file set`);
 }
