@@ -33,17 +33,20 @@ const themeScript = `
 `;
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Lazy initializer: runs once on the client after hydration. Reading
-  // localStorage here avoids calling setState inside an effect and keeps the
-  // stored preference in sync on the first render.
-  const [mode, setModeState] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "system";
+  // Always start with "system" so the initial client render matches the server
+  // snapshot. The stored preference is loaded after hydration in the effect
+  // below to avoid a hydration mismatch.
+  const [mode, setModeState] = useState<ThemeMode>("system");
+
+  // After hydration: read the stored preference and apply it if present.
+  useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") {
-      return stored;
+      setModeState(stored);
     }
-    return "system";
-  });
+    // Empty deps — runs once on mount, which is after hydration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Apply the chosen mode to <html> whenever it changes.
   useEffect(() => {
