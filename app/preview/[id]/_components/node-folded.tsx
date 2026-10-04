@@ -21,6 +21,11 @@ export interface FoldedNodeData extends Record<string, unknown> {
   /** Called on mouse enter/leave so the map can push to the pane */
   onHoverEnter: () => void;
   onHoverLeave: () => void;
+  /**
+   * Number of files in this node matching the active category filter.
+   * Undefined when no category filter is active.
+   */
+  matchCount?: number;
 }
 
 export type FoldedNodeType = {
@@ -64,7 +69,9 @@ export function FoldedNode({ data }: NodeProps) {
       >
         <span className="truncate leading-tight">{d.label}</span>
         <span className="text-neutral-500 text-[10px] tabular-nums mt-0.5">
-          {d.fileCount}f · {d.fanIn}↓ {d.fanOut}↑
+          {d.matchCount !== undefined
+            ? `${d.matchCount}/${d.fileCount}f · ${d.fanIn}↓ ${d.fanOut}↑`
+            : `${d.fileCount}f · ${d.fanIn}↓ ${d.fanOut}↑`}
         </span>
       </div>
 
