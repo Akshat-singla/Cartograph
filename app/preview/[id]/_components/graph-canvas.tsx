@@ -25,7 +25,6 @@ import {
 } from "@xyflow/react";
 // React Flow styles are imported globally in app/globals.css
 
-import type { ParseResult } from "@/lib/parser/types";
 import { foldDirectories, shortestUniqueLabels } from "@/lib/graph/fold";
 import { computeLayout } from "@/lib/graph/layout";
 import { buildCategories } from "@/lib/graph/categories";
@@ -80,7 +79,7 @@ function deriveRoot(paths: string[]): string {
 // ---------------------------------------------------------------------------
 // Inner component (needs ReactFlowProvider above it for useReactFlow)
 
-function CanvasInner({ analysis }: { analysis: ParseResult }) {
+function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
   const { fitView, getViewport } = useReactFlow<AppNode, AppEdge>();
   const { setCategories } = useCategories();
   const {
@@ -100,8 +99,7 @@ function CanvasInner({ analysis }: { analysis: ParseResult }) {
   }, [analysis, setCategories]);
 
   useEffect(() => {
-    // analysis.metrics.fanIn/fanOut are Records in the serialised fixture
-    setAnalysis(analysis as unknown as SerializedParseResult);
+    setAnalysis(analysis);
   }, [analysis, setAnalysis]);
 
   // Fold the data
@@ -115,8 +113,8 @@ function CanvasInner({ analysis }: { analysis: ParseResult }) {
       foldDirectories(
         analysis.files,
         analysis.edges,
-        analysis.metrics.fanIn as unknown as Record<string, number>,
-        analysis.metrics.fanOut as unknown as Record<string, number>,
+        analysis.metrics.fanIn,
+        analysis.metrics.fanOut,
         rootDir,
       ),
     [analysis, rootDir],
@@ -358,7 +356,7 @@ function CanvasInner({ analysis }: { analysis: ParseResult }) {
 // ---------------------------------------------------------------------------
 // Exported component — wraps the inner with the ReactFlow provider
 
-export function GraphCanvas({ analysis }: { analysis: ParseResult }) {
+export function GraphCanvas({ analysis }: { analysis: SerializedParseResult }) {
   return (
     <ReactFlowProvider>
       <div className="w-full h-full">
