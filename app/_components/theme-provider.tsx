@@ -33,15 +33,17 @@ const themeScript = `
 `;
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>("system");
-
-  // Sync state from storage after hydration.
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+  // Lazy initializer: runs once on the client after hydration. Reading
+  // localStorage here avoids calling setState inside an effect and keeps the
+  // stored preference in sync on the first render.
+  const [mode, setModeState] = useState<ThemeMode>(() => {
+    if (typeof window === "undefined") return "system";
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") {
-      setModeState(stored);
+      return stored;
     }
-  }, []);
+    return "system";
+  });
 
   // Apply the chosen mode to <html> whenever it changes.
   useEffect(() => {

@@ -1,7 +1,8 @@
 // Server-only. Never import this from a client component.
 // Sessions belong to Clerk. Supabase receives the Clerk JWT on every request
 // via the accessToken option, which makes the org claim available inside RLS
-// policies through auth.jwt() -> org_id.
+// policies through auth.jwt() -> 'o' ->> 'id'.
+// Clerk v2 tokens nest the org under the "o" key: { o: { id, rol, slg } }.
 // @supabase/ssr is intentionally NOT used here — it owns its own cookie-based
 // session system that conflicts with Clerk owning the session.
 
