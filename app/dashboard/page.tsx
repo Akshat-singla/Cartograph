@@ -12,7 +12,7 @@ export default async function DashboardPage() {
   const { data, error } = await supabase
     .from("analyses")
     .select(
-      `id, status, commit_sha, created_at, updated_at,
+      `id, status, stage, message, commit_sha, error, created_at, updated_at,
        project:projects ( name, repo_url )`,
     )
     .order("created_at", { ascending: false })

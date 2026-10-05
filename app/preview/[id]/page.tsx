@@ -1,22 +1,16 @@
-// Preview canvas page.
-// Loads analysis.json from the project fixtures and renders the graph.
-// The `id` param is accepted but ignored in this phase — there is only one
-// fixture file. Later phases will fetch real analysis data from the database.
+// Preview canvas page — now reads real data from the database.
+// The fixture file (analysis.json) has been deleted; this route redirects to
+// the /analysis/<id> route which owns the full map experience.
 //
-// analysis.json stores metrics.fanIn/fanOut as plain objects (JSON cannot
-// serialise Maps). SerializedParseResult matches that shape exactly, so no
-// cast is needed.
+// Keeping this route means any bookmarks to /preview/<id> still work.
 
-import type { SerializedParseResult } from "./_components/selection-context";
-import { GraphCanvas } from "./_components/graph-canvas";
-import analysisData from "@/app/preview/analysis.json";
+import { redirect } from "next/navigation";
 
-const analysis = analysisData as unknown as SerializedParseResult;
+interface Props {
+  params: Promise<{ id: string }>;
+}
 
-export default function PreviewPage() {
-  return (
-    <div className="w-full h-full">
-      <GraphCanvas analysis={analysis} />
-    </div>
-  );
+export default async function PreviewPage({ params }: Props) {
+  const { id } = await params;
+  redirect(`/analysis/${id}`);
 }
