@@ -54,6 +54,20 @@ interface DbFileRole {
 
 interface DbAnalysis {
   framework: string | null;
+  project: { repo_url: string | null } | null;
+}
+
+/**
+ * Extracts "owner/repo" from a GitHub URL.
+ * Strips a trailing .git suffix before splitting.
+ * Returns "unknown" when the URL is absent or malformed.
+ */
+function repoNameFromUrl(url: string | null | undefined): string {
+  if (!url) return "unknown";
+  // https://github.com/owner/repo → owner/repo
+  const parts = url.replace(/\.git$/, "").split("/");
+  if (parts.length >= 2) return parts.slice(-2).join("/");
+  return "unknown";
 }
 
 export async function AnalysisMap({ analysisId }: Props) {
@@ -80,7 +94,7 @@ export async function AnalysisMap({ analysisId }: Props) {
 
     supabase
       .from("analyses")
-      .select("framework")
+      .select("framework, project:projects ( repo_url )")
       .eq("id", analysisId)
       .single(),
 
@@ -143,6 +157,9 @@ export async function AnalysisMap({ analysisId }: Props) {
   const totalImports = edges.length + (insights?.skipped_files ?? 0);
   const resolved = edges.length;
 
+  const framework = dbAnalysis?.framework ?? "generic";
+  const repoName = repoNameFromUrl(dbAnalysis?.project?.repo_url);
+
   const analysis: SerializedParseResult = {
     files,
     edges,
@@ -167,6 +184,7 @@ export async function AnalysisMap({ analysisId }: Props) {
       fanIn,
       fanOut,
     },
+    repoName,
   };
 
   // Coverage percentage: resolved / (resolved + skipped) — external is not a failure.
@@ -174,8 +192,6 @@ export async function AnalysisMap({ analysisId }: Props) {
   const totalFiles = insights?.total_files ?? files.length;
   const coveragePct = totalFiles > 0 ? Math.round((parsedFiles / totalFiles) * 100) : 100;
   const isPartial = coveragePct < 95;
-
-  const framework = dbAnalysis?.framework ?? "generic";
 
   return (
     <SelectionProvider>

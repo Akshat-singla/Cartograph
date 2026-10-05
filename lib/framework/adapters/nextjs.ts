@@ -102,14 +102,42 @@ function extractHttpMethodsFromFile(filePath: string): string[] {
 export const nextjsAdapter: FrameworkAdapterImpl = {
   key: "nextjs",
 
-  detect(files: FileNode[], _packageJson: unknown): boolean {
-    // Detect App Router: any file matching app/layout.tsx (or .ts, .jsx, .js)
-    const appLayoutPattern = /(^|\/)app\/layout\.(tsx?|jsx?)$/;
-    if (files.some((f) => appLayoutPattern.test(f.module))) return true;
+  detect(files: FileNode[], packageJson: unknown): boolean {
+    const pkg = packageJson as Record<string, unknown> | null;
+    const deps = {
+      ...((pkg?.dependencies as Record<string, unknown>) ?? {}),
+      ...((pkg?.devDependencies as Record<string, unknown>) ?? {}),
+    };
 
-    // Detect Pages Router: any file under a pages/ directory
-    const pagesPattern = /(^|\/)pages\//;
-    if (files.some((f) => pagesPattern.test(f.module))) return true;
+    // App Router layout pattern — used in both the dep-present and fallback branches.
+    const appLayoutPattern = /(^|\/)app\/layout\.(tsx?|jsx?)$/;
+
+    if ("next" in deps) {
+      // Require "next" in dependencies as a hard gate — prevents false positives
+      // from repos that happen to have an app/ or pages/ directory but are not
+      // Next.js projects (e.g. Vite+React with src/pages/).
+
+      // Detect App Router: any file matching app/layout.tsx (or .ts, .jsx, .js)
+      if (files.some((f) => appLayoutPattern.test(f.module))) return true;
+
+      // Detect Pages Router: pages/ must be at root or one level in (pages/ or
+      // src/pages/) — not buried inside nested directories like frontend/src/pages/.
+      const pagesPattern = /^(pages\/|src\/pages\/)/;
+      if (files.some((f) => pagesPattern.test(f.module))) return true;
+
+      return false;
+    }
+
+    // Monorepo fallback: "next" may only appear in a workspace package's
+    // package.json, not at the repo root. app/layout.(tsx?|jsx?) is an
+    // unambiguous App Router signal — it is the required root layout for the
+    // App Router and has no equivalent in any other framework. We accept it
+    // here without the dep guard.
+    //
+    // The Pages Router fallback is intentionally NOT loosened: pages/ directories
+    // exist in many non-Next frameworks (Express, Nuxt, etc.), so a missing dep
+    // is too weak a signal for that convention alone.
+    if (files.some((f) => appLayoutPattern.test(f.module))) return true;
 
     return false;
   },
@@ -119,12 +147,42 @@ export const nextjsAdapter: FrameworkAdapterImpl = {
     const base = basename(mod);
     const name = stem(base);
 
-    // Next.js special filenames → Layout
-    const layoutNames = ["layout", "template", "loading", "error", "not-found"];
-    if (
-      layoutNames.includes(name) &&
-      /\.(tsx?|jsx?)$/.test(base)
-    ) {
+    // Config files: next.config.*, tailwind.config.*, postcss.config.*, etc.
+    // Matched by filename regardless of location.
+    if (/^(next|tailwind|postcss|eslint|prettier|jest|vitest)\.config\.(ts|js|mjs|cjs)$/.test(base)) {
+      return "Config";
+    }
+
+    // Instrumentation: Next.js instrumentation hook
+    if (/^instrumentation\.(ts|js)$/.test(base)) {
+      return "Instrumentation";
+    }
+
+    // Middleware: middleware.ts at root or src/
+    if (/^middleware\.(ts|js)$/.test(base) && /^(src\/)?middleware\.(ts|js)$/.test(mod)) {
+      return "Middleware";
+    }
+
+    // Tests: files ending in .test.* or .spec.*, or inside __tests__/
+    if (/\.(test|spec)\.(tsx?|jsx?)$/.test(base) || /\/__tests__\//.test(mod)) {
+      return "Test";
+    }
+
+    // Metadata files: sitemap, robots, manifest, opengraph-image, twitter-image, etc.
+    const metadataNames = ["sitemap", "robots", "manifest", "opengraph-image", "twitter-image", "icon", "apple-icon"];
+    if (metadataNames.some((m) => name === m || name.startsWith(`${m}.`))) {
+      return "Metadata";
+    }
+
+    // Loading & error UI: loading, error, not-found, global-error under app/
+    const loadingErrorNames = ["loading", "error", "not-found", "global-error"];
+    if (loadingErrorNames.includes(name) && /\.(tsx?|jsx?)$/.test(base)) {
+      return "Loading & error";
+    }
+
+    // Layout: layout, template
+    const layoutNames = ["layout", "template"];
+    if (layoutNames.includes(name) && /\.(tsx?|jsx?)$/.test(base)) {
       return "Layout";
     }
 
@@ -141,8 +199,7 @@ export const nextjsAdapter: FrameworkAdapterImpl = {
     // Server action: files in an actions/ or _actions/ directory under app/,
     // or files named actions.ts / actions.tsx.
     // Note: true "use server" detection requires file content; this is a
-    // convention-based proxy. Files with "use server" but outside these paths
-    // will be classified as Utility.
+    // convention-based proxy.
     if (
       /\/app\/.*\/_?actions\//.test(mod) ||
       base === "actions.ts" ||
@@ -151,7 +208,18 @@ export const nextjsAdapter: FrameworkAdapterImpl = {
       return "Server action";
     }
 
-    return "Utility";
+    // Hooks: files whose name starts with "use" (React convention)
+    if (/^use[A-Z]/.test(name) && /\.(tsx?|jsx?)$/.test(base)) {
+      return "Hook";
+    }
+
+    // Components: .tsx / .jsx files under a components/ directory, or any
+    // .tsx outside the app/ routing directories that exports JSX by convention
+    if (/\/components\//.test(mod) && /\.(tsx?|jsx?)$/.test(base)) {
+      return "Component";
+    }
+
+    return "Unclassified";
   },
 
   extractRoutes(files: FileNode[], rootDir: string): Route[] {

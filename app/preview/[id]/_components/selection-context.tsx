@@ -32,6 +32,8 @@ export type SerializedParseResult = Omit<ParseResult, "metrics"> & {
     fanIn: Record<string, number>;
     fanOut: Record<string, number>;
   };
+  /** Repo name derived from repo_url (owner/repo). Optional so existing preview call sites compile. */
+  repoName?: string;
 };
 
 interface SelectionContextValue {

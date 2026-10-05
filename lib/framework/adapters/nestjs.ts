@@ -22,11 +22,11 @@ function basename(modulePath: string): string {
 
 /** Map NestJS method decorator names to HTTP verbs. */
 const DECORATOR_TO_METHOD: Record<string, string> = {
-  Get:    "GET",
-  Post:   "POST",
-  Put:    "PUT",
+  Get: "GET",
+  Post: "POST",
+  Put: "PUT",
   Delete: "DELETE",
-  Patch:  "PATCH",
+  Patch: "PATCH",
 };
 
 /**
@@ -44,29 +44,46 @@ function normalizePattern(prefix: string, suffix: string): string {
 export const nestjsAdapter: FrameworkAdapterImpl = {
   key: "nestjs",
 
-  detect(_files: FileNode[], packageJson: unknown): boolean {
+  detect(files: FileNode[], packageJson: unknown): boolean {
     const pkg = packageJson as Record<string, unknown> | null ?? {};
     const deps = (pkg["dependencies"] ?? {}) as Record<string, unknown>;
     const devDeps = (pkg["devDependencies"] ?? {}) as Record<string, unknown>;
-    return (
+
+    if (
       "@nestjs/core" in deps ||
       "@nestjs/common" in deps ||
       "@nestjs/core" in devDeps ||
       "@nestjs/common" in devDeps
+    ) {
+      return true;
+    }
+
+    // Monorepo fallback: NestJS deps may live in a workspace package, not root.
+    // Convention-based signal: NestJS projects always have at least one
+    // *.controller.ts and one *.module.ts. One controller alone is not enough
+    // (generic TypeScript projects can have a single controller-like file);
+    // requiring both patterns together makes a false positive extremely unlikely.
+    const controllerCount = files.filter((f) =>
+      f.module.split("/").pop()?.endsWith(".controller.ts"),
+    ).length;
+    const hasModule = files.some((f) =>
+      f.module.split("/").pop()?.endsWith(".module.ts"),
     );
+
+    return controllerCount >= 2 && hasModule;
   },
 
   role(file: FileNode): string {
     const base = basename(file.module);
 
     if (base.endsWith(".controller.ts")) return "Controller";
-    if (base.endsWith(".service.ts"))    return "Service";
-    if (base.endsWith(".module.ts"))     return "Module";
-    if (base.endsWith(".entity.ts"))     return "Entity";
-    if (base.endsWith(".model.ts"))      return "Entity";
-    if (base.endsWith(".dto.ts"))        return "DTO";
-    if (base.endsWith(".guard.ts"))      return "Guard";
-    if (base.endsWith(".pipe.ts"))       return "Pipe";
+    if (base.endsWith(".service.ts")) return "Service";
+    if (base.endsWith(".module.ts")) return "Module";
+    if (base.endsWith(".entity.ts")) return "Entity";
+    if (base.endsWith(".model.ts")) return "Entity";
+    if (base.endsWith(".dto.ts")) return "DTO";
+    if (base.endsWith(".guard.ts")) return "Guard";
+    if (base.endsWith(".pipe.ts")) return "Pipe";
     if (base.endsWith(".interceptor.ts")) return "Interceptor";
 
     return "Utility";
