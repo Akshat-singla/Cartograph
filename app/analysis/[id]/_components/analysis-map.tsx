@@ -20,6 +20,7 @@ import { SelectionProvider } from "@/app/preview/[id]/_components/selection-cont
 import { LeftRail } from "@/app/preview/[id]/_components/left-rail";
 import { RightPane } from "@/app/preview/[id]/_components/right-pane";
 import { CoverageBanner } from "./coverage-banner";
+import { RoutesTable } from "./routes-table";
 
 interface Props {
   analysisId: string;
@@ -46,11 +47,20 @@ interface DbInsights {
   skip_reasons: Record<string, number>;
 }
 
+interface DbFileRole {
+  file_id: string;
+  role: string;
+}
+
+interface DbAnalysis {
+  framework: string | null;
+}
+
 export async function AnalysisMap({ analysisId }: Props) {
   const supabase = createSupabaseServerClient();
 
-  // Load files, edges, and insights in parallel.
-  const [filesRes, edgesRes, insightsRes] = await Promise.all([
+  // Load files, edges, insights, framework, and file roles in parallel.
+  const [filesRes, edgesRes, insightsRes, analysisRes, fileRolesRes] = await Promise.all([
     supabase
       .from("files")
       .select("id, path, language, line_count")
@@ -67,6 +77,17 @@ export async function AnalysisMap({ analysisId }: Props) {
       .select("total_files, parsed_files, skipped_files, skip_reasons")
       .eq("analysis_id", analysisId)
       .single(),
+
+    supabase
+      .from("analyses")
+      .select("framework")
+      .eq("id", analysisId)
+      .single(),
+
+    supabase
+      .from("file_roles")
+      .select("file_id, role")
+      .eq("analysis_id", analysisId),
   ]);
 
   if (filesRes.error) notFound();
@@ -74,10 +95,10 @@ export async function AnalysisMap({ analysisId }: Props) {
   const dbFiles = (filesRes.data ?? []) as DbFile[];
   const dbEdges = (edgesRes.data ?? []) as unknown as DbEdge[];
   const insights = insightsRes.data as DbInsights | null;
+  const dbAnalysis = analysisRes.data as DbAnalysis | null;
+  const dbFileRoles = (fileRolesRes.data ?? []) as DbFileRole[];
 
   // Build FileNode[] — path and folder are relative (module paths).
-  // The parser stored them as forward-slash relative paths (e.g. "src/index.ts").
-  // folder = dirname of that relative path.
   const files: FileNode[] = dbFiles.map((f) => {
     const lastSlash = f.path.lastIndexOf("/");
     const folder = lastSlash > 0 ? f.path.slice(0, lastSlash) : ".";
@@ -92,6 +113,14 @@ export async function AnalysisMap({ analysisId }: Props) {
 
   // Build a id → path index for resolving edge endpoints.
   const idToPath = new Map(dbFiles.map((f) => [f.id, f.path]));
+
+  // Build the fileRoles map: file path → role string.
+  // file_roles rows reference file_id; join through idToPath.
+  const fileRoles: Record<string, string> = {};
+  for (const r of dbFileRoles) {
+    const filePath = idToPath.get(r.file_id);
+    if (filePath) fileRoles[filePath] = r.role;
+  }
 
   // Build edge list — only edges with both ends resolved to known files.
   const edges = dbEdges
@@ -146,6 +175,8 @@ export async function AnalysisMap({ analysisId }: Props) {
   const coveragePct = totalFiles > 0 ? Math.round((parsedFiles / totalFiles) * 100) : 100;
   const isPartial = coveragePct < 95;
 
+  const framework = dbAnalysis?.framework ?? "generic";
+
   return (
     <SelectionProvider>
       <CategoriesProvider>
@@ -159,9 +190,17 @@ export async function AnalysisMap({ analysisId }: Props) {
               <LeftRail />
             </aside>
 
-            {/* Graph canvas */}
-            <main className="flex-1 overflow-hidden bg-neutral-950">
-              <GraphCanvas analysis={analysis} />
+            {/* Graph canvas + routes panel */}
+            <main className="flex-1 overflow-hidden bg-neutral-950 flex flex-col">
+              <div className="flex-1 overflow-hidden">
+                <GraphCanvas
+                  analysis={analysis}
+                  framework={framework}
+                  fileRoles={fileRoles}
+                />
+              </div>
+              {/* Routes panel — collapsible, always present, zero JS */}
+              <RoutesTable analysisId={analysisId} />
             </main>
 
             {/* Right pane */}

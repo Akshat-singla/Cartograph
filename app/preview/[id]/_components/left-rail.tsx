@@ -12,7 +12,7 @@
 import { useCategories } from "./categories-context";
 
 export function LeftRail() {
-  const { categories, activeCategory, setActiveCategory } = useCategories();
+  const { categories, activeCategory, setActiveCategory, framework } = useCategories();
 
   function handleClick(name: string) {
     // Toggle: clicking the active category clears the filter
@@ -23,7 +23,7 @@ export function LeftRail() {
     <>
       <div className="px-3 py-2 border-b border-neutral-800 shrink-0">
         <span className="text-neutral-500 text-xs uppercase tracking-widest">
-          files
+          {framework === "generic" ? "files" : framework}
         </span>
       </div>
 

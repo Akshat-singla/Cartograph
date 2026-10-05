@@ -19,6 +19,7 @@ import { createSupabaseServiceClient } from "../supabase-service";
 import { fetchRepo, cleanup } from "./fetch-repo";
 import { parseRepository } from "../parser/index";
 import { storeResult } from "./store-result";
+import { detectFramework } from "../framework/detect";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface RunOptions {
@@ -76,6 +77,10 @@ export async function runPipeline(options: RunOptions): Promise<void> {
       `${result.coverage.external} external`,
     );
 
+    // Detect framework — reads package.json from the extracted repo root.
+    const detected = detectFramework(result.files, fetched.extractedPath);
+    console.log(`[pipeline] framework: ${detected.key}`);
+
     // ── Stage 3: store ────────────────────────────────────────────────────────
     await setStage(
       supabase,
@@ -84,7 +89,15 @@ export async function runPipeline(options: RunOptions): Promise<void> {
       `Storing ${result.files.length} files…`,
     );
 
-    await storeResult({ supabase, analysisId, orgId, result });
+    await storeResult({
+      supabase,
+      analysisId,
+      orgId,
+      result,
+      framework: detected.key,
+      adapter: detected.adapter,
+      rootDir: fetched.extractedPath,
+    });
 
     // ── Done ──────────────────────────────────────────────────────────────────
     await setStage(supabase, analysisId, "done", "Analysis complete.");

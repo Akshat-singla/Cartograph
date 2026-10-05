@@ -22,6 +22,8 @@ export interface AnalysisRow {
   error: string | null;
   created_at: string;
   updated_at: string;
+  /** Detected framework key: "nextjs" | "nestjs" | "react" | "generic" | null if not yet detected */
+  framework: string | null;
   // joined from projects
   project: {
     name: string;

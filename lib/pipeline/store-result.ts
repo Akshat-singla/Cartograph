@@ -1,17 +1,20 @@
 /**
  * store-result.ts — write a ParseResult into the database.
  *
- * This runs after the parser and writes to files, edges, and insights.
- * Uses the service-role client so the pipeline can write on behalf of the
- * user without needing their JWT in scope at this point in the call chain.
- * org_id is threaded through explicitly on every row — the composite FKs
- * in migration 0003 enforce that child rows can't cross tenant boundaries.
+ * This runs after the parser and writes to files, edges, insights,
+ * file_roles, and routes. Uses the service-role client so the pipeline
+ * can write on behalf of the user without needing their JWT in scope at
+ * this point in the call chain. org_id is threaded through explicitly on
+ * every row — the composite FKs in migration 0003 enforce that child rows
+ * can't cross tenant boundaries.
  *
  * Writes are batched to avoid hitting Supabase's per-request row limits.
  * Edges reference file rows by UUID, so files must be inserted first.
+ * file_roles and routes also reference file UUIDs and are inserted after files.
  */
 
 import type { ParseResult, FileNode, Edge } from "../parser/types";
+import type { FrameworkAdapterImpl } from "../framework/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const BATCH_SIZE = 500;
@@ -21,22 +24,31 @@ export interface StoreOptions {
   analysisId: string;
   orgId: string;
   result: ParseResult;
+  /** Detected framework key (e.g. "nextjs", "generic") */
+  framework: string;
+  /** Framework adapter to use for role and route extraction */
+  adapter: FrameworkAdapterImpl;
+  /** Absolute path to the repository root on disk */
+  rootDir: string;
 }
 
 export interface StoreResult {
   fileCount: number;
   edgeCount: number;
+  routeCount: number;
 }
 
 /**
  * Persist a ParseResult for a given analysis.
  * Inserts files first, builds a path→uuid index, then inserts edges.
- * Finally inserts the insights row with coverage stats.
+ * After edges, inserts file_roles and routes using the framework adapter.
+ * Finally inserts the insights row with coverage stats and updates
+ * analyses.framework.
  *
  * Throws on any DB error — the caller (run.ts) catches and marks failed.
  */
 export async function storeResult(options: StoreOptions): Promise<StoreResult> {
-  const { supabase, analysisId, orgId, result } = options;
+  const { supabase, analysisId, orgId, result, framework, adapter, rootDir } = options;
 
   // ── 1. Insert files ─────────────────────────────────────────────────────────
   // Map from absolute path → DB uuid so we can look up source/target ids for
@@ -137,7 +149,65 @@ export async function storeResult(options: StoreOptions): Promise<StoreResult> {
     throw new Error(`Failed to insert insights: ${insightError.message}`);
   }
 
-  return { fileCount: result.files.length, edgeCount: edgeRows.length };
+  // ── 4. Insert file_roles ──────────────────────────────────────────────────
+  // Use the file UUIDs built during step 1 to correlate roles to rows.
+  // file_roles uses a unique constraint on file_id, so each file gets one role.
+  const fileRoleRows = result.files.flatMap((f: FileNode) => {
+    const fileId = absPathToId.get(f.path) ?? moduleToId.get(f.module);
+    if (!fileId) return [];
+    return [{
+      org_id: orgId,
+      analysis_id: analysisId,
+      file_id: fileId,
+      role: adapter.role(f),
+      source: "convention" as const,
+    }];
+  });
+
+  for (let i = 0; i < fileRoleRows.length; i += BATCH_SIZE) {
+    const batch = fileRoleRows.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from("file_roles").insert(batch);
+    if (error) throw new Error(`Failed to insert file_roles batch: ${error.message}`);
+  }
+
+  console.log(`[store] file_roles: ${fileRoleRows.length} inserted`);
+
+  // ── 5. Insert routes ──────────────────────────────────────────────────────
+  // extractRoutes returns routes keyed by absolute file path. We look up the
+  // file UUID from absPathToId. Routes where the file wasn't stored are dropped.
+  const extractedRoutes = adapter.extractRoutes(result.files, rootDir);
+  const routeRows = extractedRoutes.flatMap((r) => {
+    const fileId = absPathToId.get(r.file);
+    if (!fileId) return []; // file not stored — never insert an orphaned route
+    return [{
+      org_id: orgId,
+      analysis_id: analysisId,
+      file_id: fileId,
+      method: r.method,
+      path: r.pattern,  // DB column is 'path'; TypeScript type uses 'pattern'
+      handler_name: r.handlerName,
+    }];
+  });
+
+  for (let i = 0; i < routeRows.length; i += BATCH_SIZE) {
+    const batch = routeRows.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from("routes").insert(batch);
+    if (error) throw new Error(`Failed to insert routes batch: ${error.message}`);
+  }
+
+  console.log(`[store] routes: ${routeRows.length} inserted (${extractedRoutes.length - routeRows.length} dropped — file not stored)`);
+
+  // ── 6. Update analyses.framework ─────────────────────────────────────────
+  const { error: frameworkError } = await supabase
+    .from("analyses")
+    .update({ framework })
+    .eq("id", analysisId);
+
+  if (frameworkError) {
+    throw new Error(`Failed to update analyses.framework: ${frameworkError.message}`);
+  }
+
+  return { fileCount: result.files.length, edgeCount: edgeRows.length, routeCount: routeRows.length };
 }
 
 /**
