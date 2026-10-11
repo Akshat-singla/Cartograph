@@ -1,19 +1,33 @@
-// Dashboard home — org name is read from auth() on the server (first paint,
-// no client hydration required) satisfying acceptance check #3.
+// Dashboard — lists every analysis belonging to the current organization.
+// There is no org_id filter in this query. If a row appears here that belongs
+// to a different org, the RLS policy is wrong, not this file.
 
-import { auth } from "@clerk/nextjs/server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
+import type { AnalysisRow } from "@/lib/types";
+import { AnalysisList } from "./_components/analysis-list";
 
 export default async function DashboardPage() {
-  const { orgSlug, orgId } = await auth();
+  const supabase = createSupabaseServerClient();
 
-  return (
-    <div className="flex flex-1 items-center justify-center text-neutral-600">
-      <div className="text-center font-mono text-xs space-y-1">
-        <p className="text-neutral-400">
-          {orgSlug ?? orgId ?? "No organization"}
-        </p>
-        <p>Paste a repository URL to get started.</p>
+  const { data, error } = await supabase
+    .from("analyses")
+    .select(
+      `id, status, commit_sha, created_at, updated_at,
+       project:projects ( name, repo_url )`,
+    )
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    // Surface the error clearly rather than silently showing an empty list.
+    return (
+      <div className="flex flex-1 items-center justify-center font-mono text-xs text-red-400">
+        Failed to load analyses: {error.message}
       </div>
-    </div>
-  );
+    );
+  }
+
+  const analyses = (data ?? []) as unknown as AnalysisRow[];
+
+  return <AnalysisList analyses={analyses} />;
 }
