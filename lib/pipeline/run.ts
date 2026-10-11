@@ -47,10 +47,10 @@ export async function runPipeline(options: RunOptions): Promise<void> {
 
   // Mark running immediately so the dashboard doesn't show 'queued' forever.
   await setStage(supabase, analysisId, "fetching", "Downloading repository archive…");
-  await supabase
-    .from("analyses")
-    .update({ status: "running", updated_at: new Date().toISOString() })
-    .eq("id", analysisId);
+  await updateAnalysis(supabase, analysisId, {
+    status: "running",
+    updated_at: new Date().toISOString(),
+  });
 
   let tmpDir: string | undefined;
 
@@ -60,10 +60,10 @@ export async function runPipeline(options: RunOptions): Promise<void> {
     tmpDir = fetched.tmpDir;
 
     // Record commit SHA as soon as we have it
-    await supabase
-      .from("analyses")
-      .update({ commit_sha: fetched.commitSha, updated_at: new Date().toISOString() })
-      .eq("id", analysisId);
+    await updateAnalysis(supabase, analysisId, {
+      commit_sha: fetched.commitSha,
+      updated_at: new Date().toISOString(),
+    });
 
     // ── Stage 2: parse ────────────────────────────────────────────────────────
     await setStage(supabase, analysisId, "parsing", "Parsing imports and building graph…");
@@ -101,10 +101,10 @@ export async function runPipeline(options: RunOptions): Promise<void> {
 
     // ── Done ──────────────────────────────────────────────────────────────────
     await setStage(supabase, analysisId, "done", "Analysis complete.");
-    await supabase
-      .from("analyses")
-      .update({ status: "done", updated_at: new Date().toISOString() })
-      .eq("id", analysisId);
+    await updateAnalysis(supabase, analysisId, {
+      status: "done",
+      updated_at: new Date().toISOString(),
+    });
   } catch (err) {
     // Write the failure state before re-throwing so the row is never stuck.
     const message = err instanceof Error ? err.message : String(err);
@@ -134,8 +134,21 @@ async function setStage(
   stage: PipelineStage,
   message: string,
 ): Promise<void> {
-  await supabase
+  await updateAnalysis(supabase, analysisId, {
+    stage,
+    message,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function updateAnalysis(
+  supabase: SupabaseClient,
+  analysisId: string,
+  values: Record<string, string>,
+): Promise<void> {
+  const { error } = await supabase
     .from("analyses")
-    .update({ stage, message, updated_at: new Date().toISOString() })
+    .update(values)
     .eq("id", analysisId);
+  if (error) throw new Error(`Failed to update analysis ${analysisId}: ${error.message}`);
 }

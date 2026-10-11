@@ -18,11 +18,13 @@ import type { FrameworkAdapterImpl } from "./types";
 import { nextjsAdapter } from "./adapters/nextjs";
 import { nestjsAdapter } from "./adapters/nestjs";
 import { reactAdapter } from "./adapters/react";
+import { expressAdapter } from "./adapters/express";
 import { genericAdapter } from "./adapters/generic";
 
 const ADAPTER_ORDER: FrameworkAdapterImpl[] = [
   nextjsAdapter,
   nestjsAdapter,
+  expressAdapter,
   reactAdapter,
   genericAdapter,
 ];

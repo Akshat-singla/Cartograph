@@ -64,6 +64,7 @@ export async function storeResult(options: StoreOptions): Promise<StoreResult> {
     path: f.module, // store the relative module path
     language: languageFromPath(f.path),
     line_count: f.lines,
+    exports: f.exports,
     // stash the absolute path alongside so we can build absPathToId below
     _absPath: f.path,
   }));
@@ -143,6 +144,11 @@ export async function storeResult(options: StoreOptions): Promise<StoreResult> {
     parsed_files: result.files.length,
     skipped_files: sourceSkippedCount(result.skipped),
     skip_reasons: skipReasons,
+    total_imports: result.coverage.totalImports,
+    resolved_imports: result.coverage.resolved,
+    external_imports: result.coverage.external,
+    excluded_imports: result.coverage.excluded,
+    failed_imports: result.coverage.failed,
   });
 
   if (insightError) {
@@ -233,6 +239,8 @@ function edgeKind(kind: Edge["kind"]): string {
       return "reexport";
     case "dynamic-import":
       return "dynamic";
+    case "require":
+      return "require";
     default:
       return "import";
   }

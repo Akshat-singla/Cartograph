@@ -82,6 +82,7 @@ function printSummary(result: ParseResult, elapsed: number): void {
   console.log(`  Import:              ${edges.filter(e => e.kind === 'import').length}`);
   console.log(`  Re-export:           ${edges.filter(e => e.kind === 're-export').length}`);
   console.log(`  Dynamic import:      ${edges.filter(e => e.kind === 'dynamic-import').length}`);
+  console.log(`  Require:             ${edges.filter(e => e.kind === 'require').length}`);
   console.log('');
 
   if (skipped.length > 0) {

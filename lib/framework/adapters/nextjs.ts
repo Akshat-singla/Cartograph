@@ -68,6 +68,19 @@ function derivePattern(modulePath: string): string | null {
   return stripped.length > 0 ? `/${stripped}` : "/";
 }
 
+function derivePagesPattern(modulePath: string): string | null {
+  const normalized = modulePath.replace(/\\/g, "/");
+  const match = normalized.match(/^(?:src\/)?pages\/(.+)$/);
+  if (!match) return null;
+  const routeFile = match[1];
+  if (/^_(app|document|error)\./.test(routeFile)) return null;
+  const withoutExtension = routeFile.replace(/\.(tsx?|jsx?)$/, "");
+  const segments = withoutExtension.split("/").filter(Boolean);
+  if (segments.at(-1) === "index") segments.pop();
+  const pattern = segments.join("/");
+  return pattern ? `/${pattern}` : "/";
+}
+
 const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
 
 /**
@@ -195,6 +208,9 @@ export const nextjsAdapter: FrameworkAdapterImpl = {
     if (/^page\.(tsx?|jsx?)$/.test(base)) {
       return "Page route";
     }
+    if (/^(?:src\/)?pages\//.test(mod) && !/^_(app|document|error)\./.test(base) && !/^api\//.test(mod.replace(/^(?:src\/)?pages\//, ""))) {
+      return "Page route";
+    }
 
     // Server action: files in an actions/ or _actions/ directory under app/,
     // or files named actions.ts / actions.tsx.
@@ -229,13 +245,15 @@ export const nextjsAdapter: FrameworkAdapterImpl = {
       const mod = f.module.replace(/\\/g, "/");
       const base = basename(mod);
 
-      // Only process files inside the app/ directory
-      if (!/(\/)app\//.test(`/${mod}`)) continue;
+      const isAppRoute = /(^|\/)app\//.test(mod);
+      const isPagesRoute = /^(?:src\/)?pages\//.test(mod);
+      if (!isAppRoute && !isPagesRoute) continue;
 
-      const pattern = derivePattern(mod);
+      const pattern = isAppRoute ? derivePattern(mod) : derivePagesPattern(mod);
       if (pattern === null) continue;
 
-      if (/^page\.(tsx?|jsx?)$/.test(base)) {
+      const isPagesApiRoute = isPagesRoute && /^((?:src\/)?pages\/)api\//.test(mod);
+      if (/^page\.(tsx?|jsx?)$/.test(base) || (isPagesRoute && !isPagesApiRoute)) {
         // Page files always respond to GET via the default export
         routes.push({
           method: "GET",
@@ -243,7 +261,7 @@ export const nextjsAdapter: FrameworkAdapterImpl = {
           file: f.path,
           handlerName: "default",
         });
-      } else if (/^route\.(tsx?|js)$/.test(base)) {
+      } else if (isAppRoute && /^route\.(tsx?|js)$/.test(base)) {
         // Read the file from disk to find which HTTP method functions are exported
         const absPath = path.isAbsolute(f.path)
           ? f.path

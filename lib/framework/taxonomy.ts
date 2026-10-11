@@ -15,9 +15,27 @@
  */
 
 export const FRAMEWORK_TAXONOMY: Record<string, readonly string[]> = {
-  nextjs:  ["Page routes", "API endpoints", "Server actions", "Layouts", "Utilities"],
-  nestjs:  ["Controllers", "Services", "Modules", "Entities", "DTOs", "Guards", "Pipes", "Interceptors", "Utilities"],
-  react:   ["Components", "Hooks", "Contexts", "Utilities"],
+  // Routable surfaces first, then UI, then plumbing, then catch-all.
+  // "Loading & error UI" covers loading.tsx / error.tsx / not-found.tsx.
+  // "Unclassified" collects files that matched no other role.
+  nextjs: [
+    "Page routes",
+    "API endpoints",
+    "Server actions",
+    "Layouts",
+    "Loading & error UI",
+    "Components",
+    "Hooks",
+    "Middleware",
+    "Metadata files",
+    "Instrumentation",
+    "Config files",
+    "Tests",
+    "Unclassified",
+  ],
+  nestjs: ["Controllers", "Services", "Modules", "Entities", "DTOs", "Guards", "Pipes", "Interceptors", "Utilities"],
+  express: ["Routers", "Controllers", "Services", "Models", "Middleware", "Tests", "Unclassified"],
+  react: ["Components", "Hooks", "Contexts", "Utilities"],
   generic: ["Files"],
 };
 
@@ -34,27 +52,36 @@ export function categoryOrderFor(framework: string): readonly string[] {
  * Update this whenever an adapter adds a new role string.
  */
 export const ROLE_TO_CATEGORY: Record<string, string> = {
-  // Next.js roles
-  "Page route":    "Page routes",
-  "API endpoint":  "API endpoints",
+  // Next.js roles — each maps to its taxonomy category name
+  "Page route": "Page routes",
+  "API endpoint": "API endpoints",
   "Server action": "Server actions",
-  "Layout":        "Layouts",
-  "Utility":       "Utilities",
+  "Layout": "Layouts",
+  "Loading & error": "Loading & error UI",
+  "Component": "Components",
+  "Hook": "Hooks",
+  "Middleware": "Middleware",
+  "Metadata": "Metadata files",
+  "Instrumentation": "Instrumentation",
+  "Config": "Config files",
+  "Test": "Tests",
+  "Unclassified": "Unclassified",
 
   // NestJS roles
-  "Controller":  "Controllers",
-  "Service":     "Services",
-  "Module":      "Modules",
-  "Entity":      "Entities",
-  "DTO":         "DTOs",
-  "Guard":       "Guards",
-  "Pipe":        "Pipes",
+  "Controller": "Controllers",
+  "Service": "Services",
+  "Module": "Modules",
+  "Entity": "Entities",
+  "DTO": "DTOs",
+  "Guard": "Guards",
+  "Pipe": "Pipes",
   "Interceptor": "Interceptors",
+  "Utility": "Utilities",
+  "Router": "Routers",
+  "Model": "Models",
 
   // React roles
-  "Component": "Components",
-  "Hook":      "Hooks",
-  "Context":   "Contexts",
+  "Context": "Contexts",
 
   // Generic fallback
   "File": "Files",
@@ -66,24 +93,37 @@ export const ROLE_TO_CATEGORY: Record<string, string> = {
  * utilities/generic = slate.
  */
 export const CATEGORY_COLORS: Record<string, string> = {
-  "Page routes":   "#3b82f6",  // blue
+  // Next.js
+  "Page routes": "#3b82f6",  // blue
   "API endpoints": "#22c55e",  // green
-  "Server actions":"#a855f7",  // purple
-  "Layouts":       "#f59e0b",  // amber
-  "Utilities":     "#64748b",  // slate
+  "Server actions": "#a855f7",  // purple
+  "Layouts": "#f59e0b",  // amber
+  "Loading & error UI": "#ef4444",  // red
+  "Components": "#3b82f6",  // blue
+  "Hooks": "#22c55e",  // green
+  "Middleware": "#f97316",  // orange
+  "Metadata files": "#64748b",  // slate
+  "Instrumentation": "#64748b",  // slate
+  "Config files": "#64748b",  // slate
+  "Tests": "#64748b",  // slate
+  "Unclassified": "#374151",  // dark gray
 
-  "Controllers":   "#3b82f6",  // blue
-  "Services":      "#22c55e",  // green
-  "Modules":       "#a855f7",  // purple
-  "Entities":      "#ec4899",  // pink
-  "DTOs":          "#64748b",  // slate
-  "Guards":        "#ef4444",  // red
-  "Pipes":         "#f97316",  // orange
-  "Interceptors":  "#a855f7",  // purple
+  // NestJS
+  "Controllers": "#3b82f6",  // blue
+  "Services": "#22c55e",  // green
+  "Modules": "#a855f7",  // purple
+  "Entities": "#ec4899",  // pink
+  "DTOs": "#64748b",  // slate
+  "Guards": "#ef4444",  // red
+  "Pipes": "#f97316",  // orange
+  "Interceptors": "#a855f7",  // purple
+  "Utilities": "#64748b",  // slate
+  "Routers": "#3b82f6",
+  "Models": "#ec4899",
 
-  "Components":    "#3b82f6",  // blue
-  "Hooks":         "#22c55e",  // green
-  "Contexts":      "#a855f7",  // purple
+  // React
+  "Contexts": "#a855f7",  // purple
 
-  "Files":         "#64748b",  // slate
+  // Generic
+  "Files": "#64748b",  // slate
 };

@@ -32,6 +32,7 @@ interface DbFile {
   path: string;
   language: string | null;
   line_count: number | null;
+  exports: string[] | null;
 }
 
 interface DbEdge {
@@ -45,6 +46,11 @@ interface DbInsights {
   parsed_files: number;
   skipped_files: number;
   skip_reasons: Record<string, number>;
+  total_imports: number | null;
+  resolved_imports: number | null;
+  external_imports: number | null;
+  excluded_imports: number | null;
+  failed_imports: number | null;
 }
 
 interface DbFileRole {
@@ -77,7 +83,7 @@ export async function AnalysisMap({ analysisId }: Props) {
   const [filesRes, edgesRes, insightsRes, analysisRes, fileRolesRes] = await Promise.all([
     supabase
       .from("files")
-      .select("id, path, language, line_count")
+      .select("id, path, language, line_count, exports")
       .eq("analysis_id", analysisId)
       .order("path"),
 
@@ -88,7 +94,7 @@ export async function AnalysisMap({ analysisId }: Props) {
 
     supabase
       .from("insights")
-      .select("total_files, parsed_files, skipped_files, skip_reasons")
+      .select("total_files, parsed_files, skipped_files, skip_reasons, total_imports, resolved_imports, external_imports, excluded_imports, failed_imports")
       .eq("analysis_id", analysisId)
       .single(),
 
@@ -122,6 +128,7 @@ export async function AnalysisMap({ analysisId }: Props) {
       lines: f.line_count ?? 0,
       hash: "",   // not stored — not needed by the graph
       module: f.path,
+      exports: f.exports ?? [],
     };
   });
 
@@ -154,8 +161,8 @@ export async function AnalysisMap({ analysisId }: Props) {
   }
 
   // Coverage: use insights row if present, otherwise derive from what we have.
-  const totalImports = edges.length + (insights?.skipped_files ?? 0);
-  const resolved = edges.length;
+  const totalImports = insights?.total_imports ?? edges.length;
+  const resolved = insights?.resolved_imports ?? edges.length;
 
   const framework = dbAnalysis?.framework ?? "generic";
   const repoName = repoNameFromUrl(dbAnalysis?.project?.repo_url);
@@ -166,9 +173,9 @@ export async function AnalysisMap({ analysisId }: Props) {
     coverage: {
       totalImports,
       resolved,
-      external: 0,   // not stored separately — external edges were dropped at store time
-      excluded: 0,
-      failed: insights?.skipped_files ?? 0,
+      external: insights?.external_imports ?? 0,
+      excluded: insights?.excluded_imports ?? 0,
+      failed: insights?.failed_imports ?? 0,
     },
     unresolved: [],
     skipped: insights
@@ -231,10 +238,11 @@ export async function AnalysisMap({ analysisId }: Props) {
 }
 
 // Map DB kind values back to the parser edge kind type the canvas expects.
-function dbKindToParser(kind: string): "import" | "re-export" | "dynamic-import" {
+function dbKindToParser(kind: string): "import" | "re-export" | "dynamic-import" | "require" {
   switch (kind) {
     case "reexport": return "re-export";
     case "dynamic": return "dynamic-import";
+    case "require": return "require";
     default: return "import";
   }
 }

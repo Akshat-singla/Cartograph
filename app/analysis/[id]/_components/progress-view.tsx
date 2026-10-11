@@ -11,7 +11,7 @@
 // getToken() synchronously at client construction returns null before Clerk
 // has hydrated, which silently breaks realtime authentication.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { createSupabaseBrowserClientWithAuth } from "@/lib/supabase-browser";
@@ -56,9 +56,6 @@ export function ProgressView({ initial }: Props) {
     error: initial.error,
   });
 
-  const progressRef = useRef(progress);
-  progressRef.current = progress;
-
   useEffect(() => {
     let cancelled = false;
     let removeChannel: (() => void) | undefined;
@@ -84,13 +81,12 @@ export function ProgressView({ initial }: Props) {
           },
           (payload) => {
             const row = payload.new as Partial<AnalysisRow>;
-            const next: ProgressState = {
-              status: row.status ?? progressRef.current.status,
-              stage: (row.stage ?? progressRef.current.stage) as PipelineStage | null,
-              message: row.message ?? progressRef.current.message,
-              error: row.error ?? progressRef.current.error,
-            };
-            setProgress(next);
+            setProgress((current) => ({
+              status: row.status ?? current.status,
+              stage: (row.stage ?? current.stage) as PipelineStage | null,
+              message: row.message ?? current.message,
+              error: row.error ?? current.error,
+            }));
             if (row.status === "done") {
               router.refresh();
             }

@@ -53,13 +53,14 @@ export async function startAnalysis(
   // own. The unique constraint (org_id, repo_url) makes this safe to call
   // repeatedly.
   const userClient = createSupabaseServerClient();
+  const normalizedRepoUrl = `https://github.com/${owner}/${repo}`;
 
   const { data: projectData, error: projectError } = await userClient
     .from("projects")
     .upsert(
       {
         org_id: orgId,
-        repo_url: repoUrl.trim().replace(/\.git$/, "").replace(/\/$/, ""),
+        repo_url: normalizedRepoUrl,
         name: `${owner}/${repo}`,
       },
       { onConflict: "org_id,repo_url" },
@@ -108,6 +109,14 @@ export async function startAnalysis(
     .single();
 
   if (analysisError || !analysisData) {
+    if (analysisError?.code === "23505") {
+      const { data: concurrent } = await userClient
+        .from("analyses")
+        .select("id")
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (concurrent) return { ok: true, analysisId: concurrent.id, isNew: false };
+    }
     return {
       ok: false,
       error: `Could not create analysis: ${analysisError?.message ?? "unknown error"}`,
@@ -129,7 +138,7 @@ export async function startAnalysis(
       "Content-Type": "application/json",
       "x-pipeline-secret": env.pipelineSecret,
     },
-    body: JSON.stringify({ analysisId, orgId, repoUrl }),
+    body: JSON.stringify({ analysisId, orgId, repoUrl: normalizedRepoUrl }),
   }).catch((err) => {
     console.error(`[pipeline] Failed to call pipeline route for ${analysisId}:`, err);
   });

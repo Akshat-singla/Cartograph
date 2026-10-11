@@ -30,21 +30,25 @@ export async function parseRepository(
   const { files, skipped } = walkDirectory({ rootDir, excludeDirs });
 
   // Resolve all imports
-  const { edges: rawEdges, unresolved, coverage } = resolveImports(
+  const { edges: rawEdges, unresolved, coverage, exports } = resolveImports(
     files,
     rootDir
   );
+  const parsedFiles = files.map((file) => ({
+    ...file,
+    exports: exports.get(file.path) ?? [],
+  }));
 
   // Remove duplicate edges
   const edges = deduplicateEdges(rawEdges);
 
   // Calculate graph metrics
-  const folderCount = countFolders(files);
-  const fanIn = calculateFanIn(files, edges);
-  const fanOut = calculateFanOut(files, edges);
+  const folderCount = countFolders(parsedFiles);
+  const fanIn = calculateFanIn(parsedFiles, edges);
+  const fanOut = calculateFanOut(parsedFiles, edges);
 
   return {
-    files,
+    files: parsedFiles,
     edges,
     coverage,
     unresolved,

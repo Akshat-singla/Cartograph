@@ -8,7 +8,7 @@
 //
 // Dense tool style: single-line input + button, no decoration.
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { startAnalysis } from "@/app/actions/start-analysis";
 
@@ -17,6 +17,17 @@ export function RepoForm() {
   const [isPending, startTransition] = useTransition();
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const pending = localStorage.getItem("cartograph-pending-repo");
+    if (pending) {
+      // The value comes from browser storage and is intentionally applied
+      // after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUrl(pending);
+      localStorage.removeItem("cartograph-pending-repo");
+    }
+  }, []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

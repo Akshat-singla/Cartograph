@@ -117,20 +117,20 @@ function CanvasInner({
 
     if (framework !== "generic") {
       // Build role-based categories in taxonomy order.
+      // All taxonomy categories are shown; zero-count ones are included so
+      // the rail is stable — the same list in the same order every time.
       const order = categoryOrderFor(framework);
       const counts = new Map<string, number>();
       for (const f of analysis.files) {
         const role = fileRoles[f.path] ?? "File";
-        const category = ROLE_TO_CATEGORY[role] ?? "Files";
+        const category = ROLE_TO_CATEGORY[role] ?? "Unclassified";
         counts.set(category, (counts.get(category) ?? 0) + 1);
       }
-      const cats: FileCategory[] = [];
-      for (const name of order) {
-        const count = counts.get(name);
-        if (count !== undefined && count > 0) {
-          cats.push({ name, color: CATEGORY_COLORS[name] ?? "#64748b", count });
-        }
-      }
+      const cats: FileCategory[] = order.map((name) => ({
+        name,
+        color: CATEGORY_COLORS[name] ?? "#64748b",
+        count: counts.get(name) ?? 0,
+      }));
       setCategories(cats);
     } else {
       setCategories(buildCategories(analysis.files.map((f) => f.path)));

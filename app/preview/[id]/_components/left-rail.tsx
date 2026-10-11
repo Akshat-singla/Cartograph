@@ -33,20 +33,22 @@ export function LeftRail() {
         )}
         {categories.map((cat) => {
           const isActive = activeCategory === cat.name;
-          // When a filter is active, dim categories that aren't the active one
-          const isDimmed = activeCategory !== null && !isActive;
+          const isEmpty = cat.count === 0;
+          // Dim if: this category is empty, or a different category is active
+          const isDimmed = isEmpty || (activeCategory !== null && !isActive);
 
           return (
             <li
               key={cat.name}
-              onClick={() => handleClick(cat.name)}
+              onClick={() => !isEmpty && handleClick(cat.name)}
               className={`
-                flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none
+                flex items-center gap-2 px-3 py-1.5 select-none
                 transition-opacity
                 ${isDimmed ? "opacity-30" : "opacity-100"}
+                ${isEmpty ? "cursor-default" : "cursor-pointer"}
                 ${isActive
                   ? "bg-neutral-800 text-neutral-100"
-                  : "text-neutral-300 hover:bg-neutral-900"}
+                  : isEmpty ? "text-neutral-500" : "text-neutral-300 hover:bg-neutral-900"}
               `}
             >
               {/* Colour swatch — 8×8 px square */}

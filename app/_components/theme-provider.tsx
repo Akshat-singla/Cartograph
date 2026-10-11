@@ -42,10 +42,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") {
+      // The persisted preference is external state and is only available
+      // after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setModeState(stored);
     }
-    // Empty deps — runs once on mount, which is after hydration.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Apply the chosen mode to <html> whenever it changes.

@@ -14,6 +14,8 @@ export interface FileNode {
   hash: string;
   /** What this file represents in the codebase */
   module: string;
+  /** Names exported by the file, including CommonJS exports. */
+  exports: string[];
 }
 
 export interface Edge {
@@ -22,7 +24,7 @@ export interface Edge {
   /** Target file absolute path or external package */
   to: string;
   /** Type of dependency */
-  kind: 'import' | 're-export' | 'dynamic-import';
+  kind: 'import' | 're-export' | 'dynamic-import' | 'require';
 }
 
 export interface UnresolvedImport {
