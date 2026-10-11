@@ -88,6 +88,7 @@ export function walkDirectory(options: WalkOptions): WalkResult {
             lines,
             hash,
             module: modulePath,
+            exports: [],
           });
         } catch (err) {
           skipped.push({ path: fullPath, reason: `Cannot read file: ${err}` });

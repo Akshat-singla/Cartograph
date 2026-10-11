@@ -15,6 +15,7 @@
 
 import { useMemo, useState } from "react";
 import { useSelection } from "./selection-context";
+import { useCategories } from "./categories-context";
 import {
   computeRepoSummary,
   type RepoSummary,
@@ -62,6 +63,16 @@ function relativePath(p: string, root: string): string {
 }
 
 type TabId = "structure" | "explanation";
+
+// Maps pipeline framework keys to display strings for the right pane.
+// The key comes from CategoriesContext (set by GraphCanvas from the DB value),
+// avoiding the re-derived string from computeRepoSummary which can truncate.
+const FRAMEWORK_DISPLAY: Record<string, string> = {
+  nextjs: "Next.js",
+  nestjs: "NestJS",
+  react: "React",
+  generic: "Generic",
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -117,6 +128,8 @@ function PathRow({ path, root, onSelect, onHoverEnter, onHoverLeave, highlighted
 function RepoSummaryPane({
   summary,
   root,
+  frameworkDisplay,
+  repoName,
   onSelect,
   onHoverEnter,
   onHoverLeave,
@@ -124,6 +137,8 @@ function RepoSummaryPane({
 }: {
   summary: RepoSummary;
   root: string;
+  frameworkDisplay: string;
+  repoName: string;
   onSelect: (path: string) => void;
   onHoverEnter: (path: string) => void;
   onHoverLeave: () => void;
@@ -133,8 +148,8 @@ function RepoSummaryPane({
     <div className="flex flex-col">
       {/* Repo identity */}
       <div className="px-3 py-2 border-b border-neutral-800">
-        <div className="font-mono text-sm text-neutral-100 truncate">{summary.repoName}</div>
-        <div className="text-[11px] text-neutral-500 mt-0.5">{summary.framework}</div>
+        <div className="font-mono text-sm text-neutral-100 truncate">{repoName}</div>
+        <div className="text-[11px] text-neutral-500 mt-0.5">{frameworkDisplay}</div>
       </div>
 
       {/* Counts */}
@@ -681,6 +696,9 @@ function InsightsPanel({
 
 export function RightPane() {
   const { selected, mapHovered, analysis, setSelected, setHovered } = useSelection();
+  // framework key from CategoriesContext — set by GraphCanvas from the DB value,
+  // so it's always the correct pipeline key ("nextjs", "nestjs", "react", "generic").
+  const { framework } = useCategories();
 
   // Which tab is open — survives selection changes
   const [activeTab, setActiveTab] = useState<TabId>("structure");
@@ -783,6 +801,8 @@ export function RightPane() {
         <RepoSummaryPane
           summary={summary}
           root={root}
+          frameworkDisplay={FRAMEWORK_DISPLAY[framework] ?? framework}
+          repoName={analysis.repoName ?? summary.repoName}
           onSelect={setSelected}
           onHoverEnter={setHovered}
           onHoverLeave={() => setHovered(null)}

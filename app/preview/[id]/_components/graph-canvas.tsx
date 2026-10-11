@@ -30,6 +30,8 @@ import { computeLayout } from "@/lib/graph/layout";
 import { buildCategories } from "@/lib/graph/categories";
 import { useCategories } from "./categories-context";
 import { useSelection, type SerializedParseResult } from "./selection-context";
+import { ROLE_TO_CATEGORY, CATEGORY_COLORS, categoryOrderFor } from "@/lib/framework/taxonomy";
+import type { FileCategory } from "@/lib/graph/categories";
 
 // Helper: extract the `.ext` string from a file path (matching buildCategories)
 function fileExt(path: string): string {
@@ -86,9 +88,17 @@ function deriveRoot(paths: string[]): string {
 // ---------------------------------------------------------------------------
 // Inner component (needs ReactFlowProvider above it for useReactFlow)
 
-function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
+function CanvasInner({
+  analysis,
+  framework,
+  fileRoles,
+}: {
+  analysis: SerializedParseResult;
+  framework: string;
+  fileRoles: Record<string, string>;
+}) {
   const { fitView, getViewport } = useReactFlow<AppNode, AppEdge>();
-  const { setCategories, activeCategory } = useCategories();
+  const { setCategories, activeCategory, setFramework, setFileRoles } = useCategories();
   const {
     selected,
     hovered,
@@ -102,8 +112,30 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
 
   // Push categories and analysis into context on mount / when analysis changes
   useEffect(() => {
-    setCategories(buildCategories(analysis.files.map((f) => f.path)));
-  }, [analysis, setCategories]);
+    setFramework(framework);
+    setFileRoles(fileRoles);
+
+    if (framework !== "generic") {
+      // Build role-based categories in taxonomy order.
+      // All taxonomy categories are shown; zero-count ones are included so
+      // the rail is stable — the same list in the same order every time.
+      const order = categoryOrderFor(framework);
+      const counts = new Map<string, number>();
+      for (const f of analysis.files) {
+        const role = fileRoles[f.path] ?? "File";
+        const category = ROLE_TO_CATEGORY[role] ?? "Unclassified";
+        counts.set(category, (counts.get(category) ?? 0) + 1);
+      }
+      const cats: FileCategory[] = order.map((name) => ({
+        name,
+        color: CATEGORY_COLORS[name] ?? "#64748b",
+        count: counts.get(name) ?? 0,
+      }));
+      setCategories(cats);
+    } else {
+      setCategories(buildCategories(analysis.files.map((f) => f.path)));
+    }
+  }, [analysis, framework, fileRoles, setCategories, setFramework, setFileRoles]);
 
   useEffect(() => {
     setAnalysis(analysis);
@@ -224,7 +256,15 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
 
       // Category-driven dimming: dim if no file in this node matches the category
       const matchCount = activeCategory !== null
-        ? fn.files.filter((f) => fileExt(f.path) === activeCategory).length
+        ? fn.files.filter((f) => {
+          if (framework !== "generic") {
+            // Role-based: check if the file's role maps to the active category
+            const role = fileRoles[f.path] ?? "File";
+            return ROLE_TO_CATEGORY[role] === activeCategory;
+          }
+          // Extension-based fallback (generic framework)
+          return fileExt(f.path) === activeCategory;
+        }).length
         : null;
       const categoryDimmed = categoryDimming && matchCount === 0;
 
@@ -324,6 +364,8 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
     openDirs,
     selected,
     activeCategory,
+    framework,
+    fileRoles,
     labels,
     fileToDir,
     filePaths,
@@ -385,11 +427,19 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
 // ---------------------------------------------------------------------------
 // Exported component — wraps the inner with the ReactFlow provider
 
-export function GraphCanvas({ analysis }: { analysis: SerializedParseResult }) {
+export function GraphCanvas({
+  analysis,
+  framework = "generic",
+  fileRoles = {},
+}: {
+  analysis: SerializedParseResult;
+  framework?: string;
+  fileRoles?: Record<string, string>;
+}) {
   return (
     <ReactFlowProvider>
       <div className="w-full h-full">
-        <CanvasInner analysis={analysis} />
+        <CanvasInner analysis={analysis} framework={framework} fileRoles={fileRoles} />
       </div>
     </ReactFlowProvider>
   );

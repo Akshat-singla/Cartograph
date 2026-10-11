@@ -11,6 +11,7 @@ import type { Edge, UnresolvedImport, FileNode } from './types';
 export interface ResolveResult {
   edges: Edge[];
   unresolved: UnresolvedImport[];
+  exports: Map<string, string[]>;
   coverage: {
     totalImports: number;
     resolved: number;
@@ -290,20 +291,31 @@ export function resolveImports(
       handle(specifier, file.path, 're-export', exportDecl.getText());
     }
 
-    // Dynamic imports: import('./bar')
+    // Dynamic imports and CommonJS require() calls.
     sourceFile.forEachDescendant((node) => {
       if (Node.isCallExpression(node)) {
         const expr = node.getExpression();
-        if (expr.getKind() === SyntaxKind.ImportKeyword) {
-          const args = node.getArguments();
-          if (args.length > 0 && Node.isStringLiteral(args[0])) {
-            handle(
-              args[0].getLiteralValue(),
-              file.path,
-              'dynamic-import',
-              node.getText(),
-            );
-          }
+        const kind: Edge['kind'] | null =
+          expr.getKind() === SyntaxKind.ImportKeyword
+            ? 'dynamic-import'
+            : Node.isIdentifier(expr) && expr.getText() === 'require'
+              ? 'require'
+              : null;
+        if (!kind) return;
+        const args = node.getArguments();
+        if (args.length > 0 && (Node.isStringLiteral(args[0]) || Node.isNoSubstitutionTemplateLiteral(args[0]))) {
+          handle(args[0].getLiteralValue(), file.path, kind, node.getText());
+        } else {
+          totalImports++;
+          failed++;
+          unresolved.push({
+            file: file.path,
+            specifier: args[0]?.getText() ?? '',
+            reason: kind === 'require'
+              ? 'Non-literal require path'
+              : 'Non-literal dynamic import path',
+            example: node.getText(),
+          });
         }
       }
     });
@@ -312,8 +324,102 @@ export function resolveImports(
   return {
     edges,
     unresolved,
+    exports: new Map(files.map((file) => {
+      const sourceFile = project.getSourceFile(file.path);
+      return [file.path, sourceFile ? extractExports(sourceFile) : []];
+    })),
     coverage: { totalImports, resolved, external, excluded, failed },
   };
+}
+
+const WHOLE_MODULE = 'module.exports';
+
+/**
+ * Read export names from ESM and CommonJS syntax without executing code.
+ * Dynamic/runtime exports are represented by module.exports as one value.
+ */
+function extractExports(sourceFile: import('ts-morph').SourceFile): string[] {
+  const found: Array<{ name: string; position: number }> = [];
+  const add = (name: string, node: Node) => found.push({ name, position: node.getStart() });
+
+  for (const statement of sourceFile.getStatements()) {
+    if (Node.isExportDeclaration(statement)) {
+      for (const specifier of statement.getNamedExports()) {
+        add(specifier.getAliasNode()?.getText() ?? specifier.getName(), specifier);
+      }
+      const namespace = statement.getNamespaceExport();
+      if (namespace) add(namespace.getName(), namespace);
+    } else if (Node.isExportAssignment(statement)) {
+      add(statement.isExportEquals() ? WHOLE_MODULE : 'default', statement);
+    } else if (
+      Node.isFunctionDeclaration(statement) ||
+      Node.isClassDeclaration(statement) ||
+      Node.isInterfaceDeclaration(statement) ||
+      Node.isTypeAliasDeclaration(statement) ||
+      Node.isEnumDeclaration(statement)
+    ) {
+      if (!statement.hasExportKeyword()) continue;
+      add(statement.hasDefaultKeyword() ? 'default' : statement.getName() ?? WHOLE_MODULE, statement);
+    } else if (Node.isVariableStatement(statement) && statement.hasExportKeyword()) {
+      for (const declaration of statement.getDeclarations()) {
+        add(declaration.getName(), declaration);
+      }
+    }
+  }
+
+  for (const assignment of sourceFile.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) continue;
+    const target = assignment.getLeft();
+    if (isModuleExports(target)) {
+      const value = assignment.getRight();
+      if (Node.isObjectLiteralExpression(value)) {
+        const namedProperties: Array<{ name: string; node: Node }> = [];
+        for (const property of value.getProperties()) {
+          if (Node.isSpreadAssignment(property)) {
+            namedProperties.length = 0;
+            break;
+          }
+          if (
+            Node.isPropertyAssignment(property) ||
+            Node.isShorthandPropertyAssignment(property) ||
+            Node.isMethodDeclaration(property) ||
+            Node.isGetAccessorDeclaration(property) ||
+            Node.isSetAccessorDeclaration(property)
+          ) {
+            namedProperties.push({ name: property.getNameNode().getText(), node: property });
+          } else {
+            namedProperties.length = 0;
+            break;
+          }
+        }
+        if (namedProperties.length === value.getProperties().length) {
+          namedProperties.forEach(({ name, node }) => add(name, node));
+        } else {
+          add(WHOLE_MODULE, value);
+        }
+      } else {
+        add(WHOLE_MODULE, value);
+      }
+      continue;
+    }
+    if (Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target)) {
+      const object = target.getExpression();
+      if (!isModuleExports(object) && !(Node.isIdentifier(object) && object.getText() === 'exports')) continue;
+      const name = Node.isPropertyAccessExpression(target)
+        ? target.getName()
+        : target.getArgumentExpression()?.getText().replace(/^['"]|['"]$/g, '');
+      if (name) add(name, target);
+    }
+  }
+
+  return [...new Set(found.sort((a, b) => a.position - b.position).map(({ name }) => name))];
+}
+
+function isModuleExports(node: Node): boolean {
+  return Node.isPropertyAccessExpression(node)
+    && node.getName() === 'exports'
+    && Node.isIdentifier(node.getExpression())
+    && node.getExpression().getText() === 'module';
 }
 
 /**

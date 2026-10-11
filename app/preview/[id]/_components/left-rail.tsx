@@ -12,7 +12,7 @@
 import { useCategories } from "./categories-context";
 
 export function LeftRail() {
-  const { categories, activeCategory, setActiveCategory } = useCategories();
+  const { categories, activeCategory, setActiveCategory, framework } = useCategories();
 
   function handleClick(name: string) {
     // Toggle: clicking the active category clears the filter
@@ -23,7 +23,7 @@ export function LeftRail() {
     <>
       <div className="px-3 py-2 border-b border-neutral-800 shrink-0">
         <span className="text-neutral-500 text-xs uppercase tracking-widest">
-          files
+          {framework === "generic" ? "files" : framework}
         </span>
       </div>
 
@@ -33,32 +33,36 @@ export function LeftRail() {
         )}
         {categories.map((cat) => {
           const isActive = activeCategory === cat.name;
-          // When a filter is active, dim categories that aren't the active one
-          const isDimmed = activeCategory !== null && !isActive;
+          const isEmpty = cat.count === 0;
+          // Dim if: this category is empty, or a different category is active
+          const isDimmed = isEmpty || (activeCategory !== null && !isActive);
 
           return (
-            <li
-              key={cat.name}
-              onClick={() => handleClick(cat.name)}
-              className={`
-                flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none
-                transition-opacity
-                ${isDimmed ? "opacity-30" : "opacity-100"}
-                ${isActive
-                  ? "bg-neutral-800 text-neutral-100"
-                  : "text-neutral-300 hover:bg-neutral-900"}
-              `}
-            >
-              {/* Colour swatch — 8×8 px square */}
-              <span
-                className="shrink-0 w-2 h-2 rounded-sm"
-                style={{ backgroundColor: cat.color }}
-                aria-hidden="true"
-              />
-              <span className="flex-1 text-xs truncate font-mono">{cat.name}</span>
-              <span className="text-xs text-neutral-500 tabular-nums">
-                {cat.count}
-              </span>
+            <li key={cat.name} className={isDimmed ? "opacity-30" : "opacity-100"}>
+              <button
+                type="button"
+                disabled={isEmpty}
+                onClick={() => handleClick(cat.name)}
+                aria-pressed={isActive}
+                className={`
+                  flex w-full items-center gap-2 px-3 py-1.5 select-none
+                  text-left transition-opacity
+                  ${isEmpty ? "cursor-default text-neutral-500" : "cursor-pointer"}
+                  ${isActive
+                    ? "bg-neutral-800 text-neutral-100"
+                    : !isEmpty ? "text-neutral-300 hover:bg-neutral-900" : ""}
+                `}
+              >
+                <span
+                  className="shrink-0 w-2 h-2 rounded-sm"
+                  style={{ backgroundColor: cat.color }}
+                  aria-hidden="true"
+                />
+                <span className="flex-1 text-xs truncate font-mono">{cat.name}</span>
+                <span className="text-xs text-neutral-500 tabular-nums">
+                  {cat.count}
+                </span>
+              </button>
             </li>
           );
         })}

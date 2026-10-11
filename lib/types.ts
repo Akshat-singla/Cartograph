@@ -4,12 +4,26 @@
 
 export type AnalysisStatus = "queued" | "running" | "done" | "failed";
 
+// Pipeline stage values written by run.ts and forwarded via realtime.
+export type PipelineStage =
+  | "fetching"
+  | "extracting"
+  | "parsing"
+  | "storing"
+  | "done"
+  | "failed";
+
 export interface AnalysisRow {
   id: string;
   status: AnalysisStatus;
+  stage: PipelineStage | null;
+  message: string | null;
   commit_sha: string | null;
+  error: string | null;
   created_at: string;
   updated_at: string;
+  /** Detected framework key: "nextjs" | "nestjs" | "react" | "generic" | null if not yet detected */
+  framework: string | null;
   // joined from projects
   project: {
     name: string;

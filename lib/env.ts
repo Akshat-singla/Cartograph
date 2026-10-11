@@ -8,7 +8,7 @@ function requireEnv(name: string): string {
   if (!value) {
     throw new Error(
       `[cartograph] Missing required environment variable: ${name}\n` +
-        `Add it to .env.local and restart the dev server.`,
+      `Add it to .env.local and restart the dev server.`,
     );
   }
   return value;
@@ -19,4 +19,12 @@ export const env = {
   supabaseAnonKey: requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   // Server-only — never sent to the browser.
   supabaseJwtSecret: requireEnv("SUPABASE_JWT_SECRET"),
+  // Service role key — bypasses RLS. Pipeline use only.
+  supabaseServiceKey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+  // Internal secret shared between the server action and the pipeline route.
+  // Prevents the /api/pipeline endpoint from being called by arbitrary clients.
+  pipelineSecret: requireEnv("PIPELINE_SECRET"),
+  // Base URL for internal API calls (server action → pipeline route).
+  // In dev: http://localhost:3000. In prod: your deployed URL.
+  appUrl: requireEnv("NEXT_PUBLIC_APP_URL"),
 } as const;
