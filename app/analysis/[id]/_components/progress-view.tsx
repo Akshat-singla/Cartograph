@@ -92,8 +92,16 @@ export function ProgressView({ initial }: Props) {
             }
           },
         )
-        .subscribe((status) => {
+        .subscribe(async (status) => {
           console.log(`[realtime] ${initial.id} → ${status}`);
+          if (status === "SUBSCRIBED") {
+            const { data } = await supabase
+              .from("analyses")
+              .select("status")
+              .eq("id", initial.id)
+              .maybeSingle();
+            if (data?.status === "done") router.refresh();
+          }
         });
 
       removeChannel = () => void supabase.removeChannel(channel);

@@ -27,6 +27,12 @@ export type StartAnalysisResult =
   | { ok: true; analysisId: string; isNew: boolean }
   | { ok: false; error: string };
 
+const STALE_AFTER_MS = 15 * 60 * 1000;
+
+function isStale(updatedAt: string): boolean {
+  return Date.now() - new Date(updatedAt).getTime() > STALE_AFTER_MS;
+}
+
 export async function startAnalysis(
   repoUrl: string,
 ): Promise<StartAnalysisResult> {
@@ -82,13 +88,38 @@ export async function startAnalysis(
   // exists; the caller redirects to it rather than starting a duplicate.
   const { data: existing } = await userClient
     .from("analyses")
-    .select("id, status")
+    .select("id, status, updated_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (existing) {
+    const shouldRestart =
+      existing.status === "failed" ||
+      ((existing.status === "queued" || existing.status === "running") &&
+        isStale(existing.updated_at));
+
+    if (!shouldRestart) {
+      return { ok: true, analysisId: existing.id, isNew: false };
+    }
+
+    const { error: resetError } = await userClient
+      .from("analyses")
+      .update({
+        status: "queued",
+        stage: null,
+        message: "Queued for re-analysis.",
+        error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing.id);
+
+    if (resetError) {
+      return { ok: false, error: `Could not restart analysis: ${resetError.message}` };
+    }
+
+    dispatchPipeline(existing.id, orgId, normalizedRepoUrl);
     return { ok: true, analysisId: existing.id, isNew: false };
   }
 
@@ -131,6 +162,12 @@ export async function startAnalysis(
   // as soon as the response is sent, killing any background async work.
   // The API route awaits the full pipeline, keeping its request context alive.
   // We fire it without awaiting so the server action returns immediately.
+  dispatchPipeline(analysisId, orgId, normalizedRepoUrl);
+
+  return { ok: true, analysisId, isNew: true };
+}
+
+function dispatchPipeline(analysisId: string, orgId: string, repoUrl: string): void {
   const pipelineUrl = new URL("/api/pipeline", env.appUrl);
   fetch(pipelineUrl.toString(), {
     method: "POST",
@@ -138,10 +175,8 @@ export async function startAnalysis(
       "Content-Type": "application/json",
       "x-pipeline-secret": env.pipelineSecret,
     },
-    body: JSON.stringify({ analysisId, orgId, repoUrl: normalizedRepoUrl }),
+    body: JSON.stringify({ analysisId, orgId, repoUrl }),
   }).catch((err) => {
     console.error(`[pipeline] Failed to call pipeline route for ${analysisId}:`, err);
   });
-
-  return { ok: true, analysisId, isNew: true };
 }

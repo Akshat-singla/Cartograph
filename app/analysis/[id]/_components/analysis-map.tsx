@@ -26,6 +26,23 @@ interface Props {
   analysisId: string;
 }
 
+const PAGE_SIZE = 1000;
+
+type PageError = { message: string } | null;
+
+async function fetchAllPages<T>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: PageError }>,
+): Promise<{ data: T[]; error: PageError }> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const page = await fetchPage(from, from + PAGE_SIZE - 1);
+    if (page.error) return { data: rows, error: page.error };
+    const batch = page.data ?? [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) return { data: rows, error: null };
+  }
+}
+
 // DB row shapes — only the columns we select.
 interface DbFile {
   id: string;
@@ -81,16 +98,24 @@ export async function AnalysisMap({ analysisId }: Props) {
 
   // Load files, edges, insights, framework, and file roles in parallel.
   const [filesRes, edgesRes, insightsRes, analysisRes, fileRolesRes] = await Promise.all([
-    supabase
-      .from("files")
-      .select("id, path, language, line_count, exports")
-      .eq("analysis_id", analysisId)
-      .order("path"),
+    fetchAllPages(async (from, to) => {
+      const { data, error } = await supabase
+        .from("files")
+        .select("id, path, language, line_count, exports")
+        .eq("analysis_id", analysisId)
+        .order("path")
+        .range(from, to);
+      return { data, error };
+    }),
 
-    supabase
-      .from("edges")
-      .select("kind, source_id, target_id")
-      .eq("analysis_id", analysisId),
+    fetchAllPages(async (from, to) => {
+      const { data, error } = await supabase
+        .from("edges")
+        .select("kind, source_id, target_id")
+        .eq("analysis_id", analysisId)
+        .range(from, to);
+      return { data, error };
+    }),
 
     supabase
       .from("insights")
@@ -104,13 +129,17 @@ export async function AnalysisMap({ analysisId }: Props) {
       .eq("id", analysisId)
       .single(),
 
-    supabase
-      .from("file_roles")
-      .select("file_id, role")
-      .eq("analysis_id", analysisId),
+    fetchAllPages(async (from, to) => {
+      const { data, error } = await supabase
+        .from("file_roles")
+        .select("file_id, role")
+        .eq("analysis_id", analysisId)
+        .range(from, to);
+      return { data, error };
+    }),
   ]);
 
-  if (filesRes.error) notFound();
+  if (filesRes.error || edgesRes.error || fileRolesRes.error) notFound();
 
   const dbFiles = (filesRes.data ?? []) as DbFile[];
   const dbEdges = (edgesRes.data ?? []) as unknown as DbEdge[];
