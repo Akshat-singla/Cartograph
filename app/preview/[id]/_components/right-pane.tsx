@@ -1,21 +1,17 @@
 "use client";
 
-// Right detail pane — phase 5.
+// Right detail pane — phase 6 update.
 //
-// Default state (nothing selected): repo summary — name, framework, counts,
-// most-imported files, entry-point files, skipped count.
+// Added in this phase:
+//   - Blast radius button in FileStructureTab: shows every file that would
+//     break if the selected file changed (reverse transitive walk, depth 2).
+//   - Dependency chain button: every file this one needs (forward walk, depth 2).
+//   - Both are computed from the in-memory edge list — no network call.
+//   - InsightsPanel: four insight kinds rendered in a collapsible section that
+//     starts collapsed. Appears at the bottom of every pane state.
 //
-// File selected: two tabs (Structure / Explanation). Structure shows path,
-// kind, lines, fan-in/out counts and full neighbour lists. Explanation is an
-// empty state for now.
-//
-// Folder selected: same two tabs, Structure lists file kinds inside the folder.
-//
-// All path clicks call setSelected so the map moves its selection.
-// Hovering a neighbour path calls setHovered so the map highlights it.
-// Both directions run through SelectionContext — no network calls.
-//
-// Which tab is open survives selection changes (stored in local state).
+// Spec order for insights: filesNothingImports leads, cycles and long files sit
+// underneath because they read closer to a verdict.
 
 import { useMemo, useState } from "react";
 import { useSelection } from "./selection-context";
@@ -25,6 +21,8 @@ import {
   type FileDetail,
 } from "@/lib/graph/repo-stats";
 import { foldDirectories } from "@/lib/graph/fold";
+import { blastRadius, dependencyChain } from "@/lib/graph/traverse";
+import { computeInsights, type Insights } from "@/lib/graph/insights";
 import type { FileNode } from "@/lib/parser/types";
 
 // ---------------------------------------------------------------------------
@@ -203,11 +201,66 @@ function RepoSummaryPane({
 }
 
 // ---------------------------------------------------------------------------
-// File structure tab
+// Traversal result list — shared by blast radius and dependency chain
+
+function TraversalList({
+  paths,
+  root,
+  label,
+  onSelect,
+  onHoverEnter,
+  onHoverLeave,
+  mapHovered,
+  onClear,
+}: {
+  paths: string[];
+  root: string;
+  label: string;
+  onSelect: (path: string) => void;
+  onHoverEnter: (path: string) => void;
+  onHoverLeave: () => void;
+  mapHovered: string | null;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between px-3 pt-2 pb-1">
+        <span className="text-[10px] uppercase tracking-widest text-neutral-500">{label}</span>
+        <button
+          onClick={onClear}
+          className="text-[10px] text-neutral-600 hover:text-neutral-300 cursor-pointer"
+        >
+          ✕ clear
+        </button>
+      </div>
+      {paths.length === 0 ? (
+        <div className="px-3 py-1 text-[11px] text-neutral-600">none within 2 hops</div>
+      ) : (
+        paths.map((p) => (
+          <PathRow
+            key={p}
+            path={p}
+            root={root}
+            onSelect={() => onSelect(p)}
+            onHoverEnter={() => onHoverEnter(p)}
+            onHoverLeave={onHoverLeave}
+            highlighted={mapHovered === p}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// File structure tab — with blast radius / dependency chain buttons
+
+type TraversalView = "blast" | "deps" | null;
 
 function FileStructureTab({
   detail,
   root,
+  edges,
   onSelect,
   onHoverEnter,
   onHoverLeave,
@@ -215,12 +268,26 @@ function FileStructureTab({
 }: {
   detail: FileDetail;
   root: string;
+  edges: Array<{ from: string; to: string }>;
   onSelect: (path: string) => void;
   onHoverEnter: (path: string) => void;
   onHoverLeave: () => void;
   mapHovered: string | null;
 }) {
+  const [traversal, setTraversal] = useState<TraversalView>(null);
+
+  // Compute traversal results on demand — pure, instant, no network
+  const blastPaths = useMemo(
+    () => (traversal === "blast" ? blastRadius(detail.file.path, edges) : null),
+    [traversal, detail.file.path, edges],
+  );
+  const depPaths = useMemo(
+    () => (traversal === "deps" ? dependencyChain(detail.file.path, edges) : null),
+    [traversal, detail.file.path, edges],
+  );
+
   const relPath = relativePath(detail.file.path, root);
+
   return (
     <div className="flex flex-col">
       {/* File identity */}
@@ -235,44 +302,99 @@ function FileStructureTab({
       <StatRow label="imports" value={detail.fanOut} />
       <StatRow label="imported by" value={detail.fanIn} />
 
-      {/* Dependencies (what this file imports) */}
-      {detail.dependencies.length > 0 && (
-        <>
-          <SectionLabel>imports ({detail.fanOut})</SectionLabel>
-          {detail.dependencies.map((f) => (
-            <PathRow
-              key={f.path}
-              path={f.path}
-              root={root}
-              onSelect={() => onSelect(f.path)}
-              onHoverEnter={() => onHoverEnter(f.path)}
-              onHoverLeave={onHoverLeave}
-              highlighted={mapHovered === f.path}
-            />
-          ))}
-        </>
+      {/* Traversal buttons */}
+      <div className="flex gap-2 px-3 pt-2 pb-1">
+        <button
+          onClick={() => setTraversal(traversal === "blast" ? null : "blast")}
+          className={`
+            px-2 py-0.5 text-[10px] rounded border cursor-pointer
+            ${traversal === "blast"
+              ? "border-blue-500 text-blue-300 bg-blue-950"
+              : "border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"}
+          `}
+        >
+          blast radius
+        </button>
+        <button
+          onClick={() => setTraversal(traversal === "deps" ? null : "deps")}
+          className={`
+            px-2 py-0.5 text-[10px] rounded border cursor-pointer
+            ${traversal === "deps"
+              ? "border-blue-500 text-blue-300 bg-blue-950"
+              : "border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"}
+          `}
+        >
+          dependency chain
+        </button>
+      </div>
+
+      {/* Traversal results — shown inline, replacing the neighbour lists */}
+      {traversal === "blast" && blastPaths !== null && (
+        <TraversalList
+          paths={blastPaths}
+          root={root}
+          label={`blast radius (${blastPaths.length})`}
+          onSelect={onSelect}
+          onHoverEnter={onHoverEnter}
+          onHoverLeave={onHoverLeave}
+          mapHovered={mapHovered}
+          onClear={() => setTraversal(null)}
+        />
+      )}
+      {traversal === "deps" && depPaths !== null && (
+        <TraversalList
+          paths={depPaths}
+          root={root}
+          label={`dependency chain (${depPaths.length})`}
+          onSelect={onSelect}
+          onHoverEnter={onHoverEnter}
+          onHoverLeave={onHoverLeave}
+          mapHovered={mapHovered}
+          onClear={() => setTraversal(null)}
+        />
       )}
 
-      {/* Dependents (what imports this file) */}
-      {detail.dependents.length > 0 && (
+      {/* When no traversal is active, show the direct neighbour lists */}
+      {traversal === null && (
         <>
-          <SectionLabel>imported by ({detail.fanIn})</SectionLabel>
-          {detail.dependents.map((f) => (
-            <PathRow
-              key={f.path}
-              path={f.path}
-              root={root}
-              onSelect={() => onSelect(f.path)}
-              onHoverEnter={() => onHoverEnter(f.path)}
-              onHoverLeave={onHoverLeave}
-              highlighted={mapHovered === f.path}
-            />
-          ))}
-        </>
-      )}
+          {detail.dependencies.length > 0 && (
+            <>
+              <SectionLabel>imports ({detail.fanOut})</SectionLabel>
+              {detail.dependencies.map((f) => (
+                <PathRow
+                  key={f.path}
+                  path={f.path}
+                  root={root}
+                  onSelect={() => onSelect(f.path)}
+                  onHoverEnter={() => onHoverEnter(f.path)}
+                  onHoverLeave={onHoverLeave}
+                  highlighted={mapHovered === f.path}
+                />
+              ))}
+            </>
+          )}
 
-      {detail.dependencies.length === 0 && detail.dependents.length === 0 && (
-        <div className="px-3 py-2 text-[11px] text-neutral-600">No resolved edges.</div>
+          {detail.dependents.length > 0 && (
+            <>
+              <SectionLabel>imported by ({detail.fanIn})</SectionLabel>
+              {detail.dependents.map((f) => (
+                <PathRow
+                  key={f.path}
+                  path={f.path}
+                  root={root}
+                  onSelect={() => onSelect(f.path)}
+                  onHoverEnter={() => onHoverEnter(f.path)}
+                  onHoverLeave={onHoverLeave}
+                  highlighted={mapHovered === f.path}
+                />
+              ))}
+            </>
+          )}
+
+          {detail.dependencies.length === 0 && detail.dependents.length === 0 && (
+            <div className="px-3 py-2 text-[11px] text-neutral-600">No resolved edges.</div>
+          )}
+        </>
       )}
     </div>
   );
@@ -304,8 +426,7 @@ function FolderStructureTab({
     const e = ext(f.path) || ".?";
     extMap.set(e, (extMap.get(e) ?? 0) + 1);
   }
-  const byKind = [...extMap.entries()]
-    .sort((a, b) => b[1] - a[1]);
+  const byKind = [...extMap.entries()].sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="flex flex-col">
@@ -371,6 +492,191 @@ function TabBar({
 }
 
 // ---------------------------------------------------------------------------
+// Insights panel — collapsed by default, rendered at the bottom of every state.
+//
+// Four insight kinds in spec order:
+//   1. Files nothing imports (leading — explanatory)
+//   2. Import cycles
+//   3. Highly imported files
+//   4. Long files
+//
+// No model, no scores. Each section has one fixed descriptive string.
+
+function InsightsPanel({
+  insights,
+  root,
+  onSelect,
+  onHoverEnter,
+  onHoverLeave,
+  mapHovered,
+}: {
+  insights: Insights;
+  root: string;
+  onSelect: (path: string) => void;
+  onHoverEnter: (path: string) => void;
+  onHoverLeave: () => void;
+  mapHovered: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const totalFindings =
+    insights.unimported.length +
+    insights.cycles.length +
+    insights.highlyImported.length +
+    insights.long.length;
+
+  return (
+    <div className="border-t border-neutral-800 mt-2 shrink-0">
+      {/* Toggle header */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-widest text-neutral-500 hover:text-neutral-300 cursor-pointer"
+      >
+        <span>insights</span>
+        <span className="tabular-nums font-mono text-neutral-600">
+          {open ? "▲" : "▼"} {totalFindings}
+        </span>
+      </button>
+
+      {open && (
+        <div className="flex flex-col pb-3">
+
+          {/* 1 — files nothing imports */}
+          {insights.unimported.length > 0 && (
+            <>
+              <SectionLabel>
+                not imported ({insights.unimported.length})
+              </SectionLabel>
+              <p className="px-3 pb-1 text-[11px] text-neutral-600 leading-snug">
+                These files have no importers in the graph. They may be entry
+                points the import graph cannot see, or genuinely unused.
+              </p>
+              {insights.unimported.slice(0, 20).map(({ file }) => (
+                <PathRow
+                  key={file.path}
+                  path={file.path}
+                  root={root}
+                  onSelect={() => onSelect(file.path)}
+                  onHoverEnter={() => onHoverEnter(file.path)}
+                  onHoverLeave={onHoverLeave}
+                  highlighted={mapHovered === file.path}
+                />
+              ))}
+              {insights.unimported.length > 20 && (
+                <div className="px-3 py-0.5 text-[11px] text-neutral-600">
+                  +{insights.unimported.length - 20} more
+                </div>
+              )}
+            </>
+          )}
+
+          {/* 2 — import cycles */}
+          {insights.cycles.length > 0 && (
+            <>
+              <SectionLabel>
+                import cycles ({insights.cycles.length})
+              </SectionLabel>
+              <p className="px-3 pb-1 text-[11px] text-neutral-600 leading-snug">
+                Groups of files that import each other, forming a loop.
+              </p>
+              {insights.cycles.map((cycle, i) => (
+                <div key={i} className="px-3 py-1">
+                  <div className="text-[10px] text-neutral-600 mb-0.5">cycle {i + 1} — {cycle.length} files</div>
+                  {cycle.map((p) => (
+                    <PathRow
+                      key={p}
+                      path={p}
+                      root={root}
+                      onSelect={() => onSelect(p)}
+                      onHoverEnter={() => onHoverEnter(p)}
+                      onHoverLeave={onHoverLeave}
+                      highlighted={mapHovered === p}
+                    />
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* 3 — highly imported */}
+          {insights.highlyImported.length > 0 && (
+            <>
+              <SectionLabel>
+                load-bearing ({insights.highlyImported.length})
+              </SectionLabel>
+              <p className="px-3 pb-1 text-[11px] text-neutral-600 leading-snug">
+                Files imported significantly more than the average — the parts
+                of this codebase most other code depends on.
+              </p>
+              {insights.highlyImported.map(({ file, fanIn, ratio }) => (
+                <div
+                  key={file.path}
+                  onClick={() => onSelect(file.path)}
+                  onMouseEnter={() => onHoverEnter(file.path)}
+                  onMouseLeave={onHoverLeave}
+                  className={`
+                    flex items-baseline gap-2 px-3 py-0.5 cursor-pointer
+                    ${mapHovered === file.path
+                      ? "bg-amber-900/30"
+                      : "hover:bg-neutral-800"}
+                  `}
+                >
+                  <span className="font-mono text-[11px] truncate flex-1 text-blue-400" title={file.path}>
+                    {relativePath(file.path, root)}
+                  </span>
+                  <span className="text-neutral-500 text-[10px] tabular-nums shrink-0">
+                    {fanIn}↓ ×{ratio}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* 4 — long files */}
+          {insights.long.length > 0 && (
+            <>
+              <SectionLabel>
+                long files ({insights.long.length})
+              </SectionLabel>
+              <p className="px-3 pb-1 text-[11px] text-neutral-600 leading-snug">
+                Files over 500 lines.
+              </p>
+              {insights.long.map(({ file, lines }) => (
+                <div
+                  key={file.path}
+                  onClick={() => onSelect(file.path)}
+                  onMouseEnter={() => onHoverEnter(file.path)}
+                  onMouseLeave={onHoverLeave}
+                  className={`
+                    flex items-baseline gap-2 px-3 py-0.5 cursor-pointer
+                    ${mapHovered === file.path
+                      ? "bg-amber-900/30"
+                      : "hover:bg-neutral-800"}
+                  `}
+                >
+                  <span className="font-mono text-[11px] truncate flex-1 text-blue-400" title={file.path}>
+                    {relativePath(file.path, root)}
+                  </span>
+                  <span className="text-neutral-500 text-[10px] tabular-nums shrink-0">
+                    {lines} lines
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {totalFindings === 0 && (
+            <div className="px-3 py-2 text-[11px] text-neutral-600">
+              Nothing to report.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 
 export function RightPane() {
@@ -401,6 +707,16 @@ export function RightPane() {
     );
     return { foldedNodes: nodes };
   }, [analysis, root]);
+
+  // Compute all four insights once — pure, no network
+  const insights = useMemo(() => {
+    if (!analysis) return null;
+    return computeInsights(
+      analysis.files,
+      analysis.edges,
+      analysis.metrics.fanIn,
+    );
+  }, [analysis]);
 
   // Determine what is selected: a file, a folder node, or nothing
   const selectionKind: "file" | "folder" | "none" = useMemo(() => {
@@ -439,7 +755,6 @@ export function RightPane() {
   }, [selectionKind, selected, foldedNodes]);
 
   if (!analysis || !summary) {
-    // analysis arrives asynchronously from the canvas; show nothing until ready
     return (
       <div className="flex flex-col flex-1 overflow-hidden">
         <div className="px-3 py-2 border-b border-neutral-800">
@@ -448,6 +763,18 @@ export function RightPane() {
       </div>
     );
   }
+
+  // Common props for InsightsPanel
+  const insightsProps = insights
+    ? {
+      insights,
+      root,
+      onSelect: setSelected,
+      onHoverEnter: setHovered,
+      onHoverLeave: () => setHovered(null),
+      mapHovered,
+    }
+    : null;
 
   // Nothing selected — repo summary fills the pane
   if (selectionKind === "none") {
@@ -461,6 +788,7 @@ export function RightPane() {
           onHoverLeave={() => setHovered(null)}
           mapHovered={mapHovered}
         />
+        {insightsProps && <InsightsPanel {...insightsProps} />}
       </div>
     );
   }
@@ -473,24 +801,31 @@ export function RightPane() {
       <div className="flex-1 overflow-y-auto">
         {activeTab === "structure" ? (
           selectionKind === "file" && fileDetail ? (
-            <FileStructureTab
-              detail={fileDetail}
-              root={root}
-              onSelect={setSelected}
-              onHoverEnter={setHovered}
-              onHoverLeave={() => setHovered(null)}
-              mapHovered={mapHovered}
-            />
+            <>
+              <FileStructureTab
+                detail={fileDetail}
+                root={root}
+                edges={analysis.edges}
+                onSelect={setSelected}
+                onHoverEnter={setHovered}
+                onHoverLeave={() => setHovered(null)}
+                mapHovered={mapHovered}
+              />
+              {insightsProps && <InsightsPanel {...insightsProps} />}
+            </>
           ) : selectionKind === "folder" && folderDetail ? (
-            <FolderStructureTab
-              dir={folderDetail.dir}
-              files={folderDetail.files}
-              root={root}
-              onSelect={setSelected}
-              onHoverEnter={setHovered}
-              onHoverLeave={() => setHovered(null)}
-              mapHovered={mapHovered}
-            />
+            <>
+              <FolderStructureTab
+                dir={folderDetail.dir}
+                files={folderDetail.files}
+                root={root}
+                onSelect={setSelected}
+                onHoverEnter={setHovered}
+                onHoverLeave={() => setHovered(null)}
+                mapHovered={mapHovered}
+              />
+              {insightsProps && <InsightsPanel {...insightsProps} />}
+            </>
           ) : null
         ) : (
           // Explanation tab — empty state this phase

@@ -30,6 +30,13 @@ import { computeLayout } from "@/lib/graph/layout";
 import { buildCategories } from "@/lib/graph/categories";
 import { useCategories } from "./categories-context";
 import { useSelection, type SerializedParseResult } from "./selection-context";
+
+// Helper: extract the `.ext` string from a file path (matching buildCategories)
+function fileExt(path: string): string {
+  const base = path.split("/").pop() ?? "";
+  const i = base.lastIndexOf(".");
+  return i > 0 ? base.slice(i) : "";
+}
 import {
   FoldedNode,
   foldedHeight,
@@ -81,7 +88,7 @@ function deriveRoot(paths: string[]): string {
 
 function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
   const { fitView, getViewport } = useReactFlow<AppNode, AppEdge>();
-  const { setCategories } = useCategories();
+  const { setCategories, activeCategory } = useCategories();
   const {
     selected,
     hovered,
@@ -186,27 +193,44 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
     // Edges that directly touch the selected dir.
     const litEdgeSet = new Set<string>();
     // Dirs that should be bright: the selected dir + the other end of every lit edge.
-    const litDirs = new Set<string>();
+    const selectionLitDirs = new Set<string>();
 
     if (selectedDir !== null) {
-      litDirs.add(selectedDir);
+      selectionLitDirs.add(selectedDir);
       for (const e of layoutEdges) {
         if (e.source === selectedDir || e.target === selectedDir) {
           litEdgeSet.add(`${e.source}→${e.target}`);
-          litDirs.add(e.source);
-          litDirs.add(e.target);
+          selectionLitDirs.add(e.source);
+          selectionLitDirs.add(e.target);
         }
       }
     }
 
-    const dimming = selected !== null;
+    const selectionDimming = selected !== null;
+
+    // ---- Category filter geometry ----
+    // When a category is active, a node is dimmed if none of its files match.
+    // Category filter is independent of selection dimming — both can be active.
+    const categoryDimming = activeCategory !== null;
 
     // Build RF nodes
     const rfNodes: AppNode[] = foldedNodes.map((fn) => {
       const pos = positions.get(fn.dir) ?? { x: 0, y: 0 };
       const label = labels.get(fn.dir) ?? fn.dir.split("/").pop() ?? fn.dir;
       const isOpen = openDirs.has(fn.dir);
-      const dimmed = dimming && !litDirs.has(fn.dir);
+
+      // Selection-driven dimming
+      const selectionDimmed = selectionDimming && !selectionLitDirs.has(fn.dir);
+
+      // Category-driven dimming: dim if no file in this node matches the category
+      const matchCount = activeCategory !== null
+        ? fn.files.filter((f) => fileExt(f.path) === activeCategory).length
+        : null;
+      const categoryDimmed = categoryDimming && matchCount === 0;
+
+      // A node dims if either rule applies
+      const dimmed = selectionDimmed || categoryDimmed;
+
       // A node is highlighted when the pane is hovering a neighbour that maps to this dir
       const highlighted = hoveredDir === fn.dir;
 
@@ -233,6 +257,8 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
           dimmed,
           highlighted,
           highlightedFile,
+          // Pass match count only when a category filter is active
+          matchCount: matchCount ?? undefined,
           onHoverEnter: () => setMapHovered(fn.dir),
           onHoverLeave: () => setMapHovered(null),
           onFileHoverEnter: (p) => setMapHovered(p),
@@ -259,6 +285,8 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
           selected: selected === fn.dir,
           dimmed,
           highlighted,
+          // Pass match count only when a category filter is active
+          matchCount: matchCount ?? undefined,
           onHoverEnter: () => setMapHovered(fn.dir),
           onHoverLeave: () => setMapHovered(null),
         };
@@ -276,7 +304,7 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
     // Build RF edges — lit edges are full opacity, rest are hidden
     const rfEdges: AppEdge[] = layoutEdges.map(({ source, target }, i) => {
       const key = `${source}→${target}`;
-      const lit = !dimming || litEdgeSet.has(key);
+      const lit = !selectionDimming || litEdgeSet.has(key);
       return {
         id: `e-${i}`,
         source,
@@ -295,6 +323,7 @@ function CanvasInner({ analysis }: { analysis: SerializedParseResult }) {
     foldedNodes,
     openDirs,
     selected,
+    activeCategory,
     labels,
     fileToDir,
     filePaths,

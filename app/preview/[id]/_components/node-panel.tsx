@@ -45,6 +45,11 @@ export interface PanelNodeData extends Record<string, unknown> {
   /** Called on mouse enter/leave of a file row */
   onFileHoverEnter: (path: string) => void;
   onFileHoverLeave: () => void;
+  /**
+   * Number of files in this node matching the active category filter.
+   * Undefined when no category filter is active.
+   */
+  matchCount?: number;
 }
 
 export type PanelNodeType = {
@@ -81,7 +86,9 @@ export function PanelNode({ data, id }: NodeProps) {
       >
         <span className="flex-1 truncate text-neutral-100">{d.label}</span>
         <span className="text-neutral-500 text-[10px] tabular-nums shrink-0">
-          {d.files.length}f · {d.fanIn}↓ {d.fanOut}↑
+          {d.matchCount !== undefined
+            ? `${d.matchCount}/${d.files.length}f · ${d.fanIn}↓ ${d.fanOut}↑`
+            : `${d.files.length}f · ${d.fanIn}↓ ${d.fanOut}↑`}
         </span>
       </div>
 
